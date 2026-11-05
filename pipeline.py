@@ -478,7 +478,7 @@ def main():
     m_args = (a.mapper, a.mapper_lora, a.mapper_gpu_mem, a.seed, 2048, 256, {"enable_thinking": False}, a.eager)
     mapper = None if a.mapper == "none" or gold else RemoteVLLM(a.mapper_device, *m_args) if a.mapper_device else VLLM(*m_args)
     llm = GoldLLM() if gold else VLLM(a.llm, a.llm_lora, a.gpu_mem, a.seed, MAX_CTX, MAX_NEW, None, a.eager)
-    slow = []
+    slow, shown_tb = [], False
     with open(a.out, "w", encoding="utf-8") as fout, open(a.out + ".trace.jsonl", "w", encoding="utf-8") as ftr:
         for i, item in enumerate(items):
             t0 = time.time()  # the time limit covers ASR and mapper of this sample too
@@ -503,6 +503,9 @@ def main():
                 run_agent(env, llm, msgs, tools, catalog, trace, rounds)
             except Exception as e:  # keep what already ran; a crash must still write the line
                 trace.append({"error": f"{type(e).__name__}: {str(e)[:300]}", "traceback": traceback.format_exc()})
+                if not shown_tb:  # full traceback of the first failure in the log; the rest are in the trace file
+                    shown_tb = True
+                    traceback.print_exc()
             calls = env.get_tool_calls()
             dt = time.time() - t0
             if dt > TIME_LIMIT_S:
