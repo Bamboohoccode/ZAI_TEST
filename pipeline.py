@@ -15,6 +15,7 @@ import random
 import re
 import sys
 import time
+import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -298,23 +299,23 @@ def load_asr(name, ckpt, device):
     return model.to(device).eval()
 
 
-def load_itn(folder_path, device="cpu"):
+def load_itn(folder_path, device="cpu", code_dir=None):
     """Load the bert2BERT inverse-text-normalization model trained by ITN/main.py (checkpoint folder with
     config.json + model.safetensors). Returns itn(text) -> text, e.g. 'ngày chín tháng một' -> 'ngày 9/1'.
+    code_dir: the ITN folder holding model.py and model_config.py (default: ITN/ next to this script).
     Same tag-then-generate decoding as ITN/infer.py."""
     import torch
     from safetensors.torch import load_file
     from transformers import GenerationConfig
-    itn_dir = str(Path(__file__).resolve().parent / "ITN")
-    sys.path.insert(0, itn_dir)  # ITN modules import each other as top-level names (model, model_config)
-    cwd = os.getcwd()
+    itn_dir = Path(code_dir) if code_dir else Path(__file__).resolve().parent / "ITN"
+    if not ((itn_dir / "model.py").exists() and (itn_dir / "model_config.py").exists()):
+        raise FileNotFoundError(f"ITN code (model.py, model_config.py) not found in {itn_dir}; pass --itn-code")
+    sys.path.insert(0, str(itn_dir))  # ITN modules import each other as top-level names (model, model_config)
     try:
-        os.chdir(itn_dir)  # model.py creates ./cache on import
-        import model as itn_model
+        import model as itn_model  # makes ./cache in the cwd
         from model_config import InvertTextNormalizationConfig
     finally:
-        os.chdir(cwd)
-        sys.path.remove(itn_dir)
+        sys.path.remove(str(itn_dir))
     tokenizer = itn_model.init_tokenizer()
     # Not from_pretrained: transformers 5.x crashes in mark_tied_weights_as_initialized for the custom decoder.
     net = itn_model.InvertTextNormalization(InvertTextNormalizationConfig.from_pretrained(folder_path))
@@ -433,6 +434,7 @@ def main():
     ap.add_argument("--asr-ckpt", help="fine-tuned ChunkFormer .pt loaded onto --asr")
     ap.add_argument("--asr-device", default="cuda:0")
     ap.add_argument("--itn", help="folder of the ITN checkpoint trained by ITN/main.py; runs on ASR text before the mapper")
+    ap.add_argument("--itn-code", help="ITN folder with model.py + model_config.py (default: ITN/ next to pipeline.py)")
     ap.add_argument("--itn-device", default="cuda:0")
     ap.add_argument("--mapper", default=MAPPER_MODEL, help='HF id or local folder, "none" = off')
     ap.add_argument("--mapper-lora")
@@ -472,7 +474,7 @@ def main():
 
     # all models stay resident (GPU split: ASR + mapper --mapper-gpu-mem + llm --gpu-mem); each sample runs end to end
     asr = None if a.text else load_asr(a.asr, a.asr_ckpt, a.asr_device)
-    itn = load_itn(a.itn, a.itn_device) if a.itn else None
+    itn = load_itn(a.itn, a.itn_device, a.itn_code) if a.itn else None
     m_args = (a.mapper, a.mapper_lora, a.mapper_gpu_mem, a.seed, 2048, 256, {"enable_thinking": False}, a.eager)
     mapper = None if a.mapper == "none" or gold else RemoteVLLM(a.mapper_device, *m_args) if a.mapper_device else VLLM(*m_args)
     llm = GoldLLM() if gold else VLLM(a.llm, a.llm_lora, a.gpu_mem, a.seed, MAX_CTX, MAX_NEW, None, a.eager)
@@ -500,7 +502,7 @@ def main():
                     llm.queue = list(item["label"]["tool_calls"])
                 run_agent(env, llm, msgs, tools, catalog, trace, rounds)
             except Exception as e:  # keep what already ran; a crash must still write the line
-                trace.append({"error": f"{type(e).__name__}: {str(e)[:300]}"})
+                trace.append({"error": f"{type(e).__name__}: {str(e)[:300]}", "traceback": traceback.format_exc()})
             calls = env.get_tool_calls()
             dt = time.time() - t0
             if dt > TIME_LIMIT_S:
