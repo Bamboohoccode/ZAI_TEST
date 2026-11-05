@@ -23,3 +23,4 @@ Cấu trúc mục tiêu (code, eval, docker...) xem [Overview_PJ.md](Overview_PJ
 - Không commit `data/` hay trọng số model (luật cuộc thi cấm phát tán dữ liệu).
 - Nhánh: `<loại>/<module>-<tên>`, ví dụ `feat/asr-khanh`. Chi tiết trong [Overview_PJ.md](Overview_PJ.md#31-quy-ước-nhánh).
 - Chạy offline hoàn toàn khi suy luận.
+# ZAI_TEST
