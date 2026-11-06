@@ -137,18 +137,32 @@ def create_invert_text_norm(item_1, item_2):
     return src_list, tgt_list
 
 # data init
-def init_data(json_path=None):
+def init_data(json_path=None, only_json=False, viet_frac=0.02):
+    """Default: VietAI/spoken_norm_assignment (random viet_frac of train, 1.0 = all).
+    json_path (list of {'spoken','formatted'} spans):
+      only_json=True  -> train and valid are that file only
+      only_json=False -> train = VietAI shard + the file (general + domain data), valid = VietAI valid
+    """
     if json_path:
         import json
         with open(json_path, encoding="utf-8") as f:
             records = json.load(f)
         # each record is one span: spoken form -> written form
         rows = [{"src": [r["spoken"]], "tgt": [r["formatted"]]} for r in records]
+        extra = datasets.Dataset.from_list(rows)
+    if json_path and only_json:
         # use every record for training; valid is the same data (only used for eval loss / best-checkpoint selection)
-        full = datasets.Dataset.from_list(rows)
-        dataset = datasets.DatasetDict({"train": full, "valid": full})
+        dataset = datasets.DatasetDict({"train": extra, "valid": extra})
     else:
         dataset = datasets.load_dataset('VietAI/spoken_norm_assignment')
+        train = dataset['train']
+        if viet_frac < 1:  # subsample the big default set (random, fixed seed)
+            train = train.shuffle(seed=0).select(range(max(1, int(len(train) * viet_frac))))
+        if json_path:
+            train = train.select_columns(["src", "tgt"]).cast(extra.features)
+            train = datasets.concatenate_datasets([train, extra]).shuffle(seed=0)
+            print(f"Train: {len(train) - len(extra)} VietAI + {len(extra)} from {json_path}")
+        dataset = datasets.DatasetDict({"train": train, "valid": dataset['valid']})
 
     print("Dataset: ", dataset)
     return dataset

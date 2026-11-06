@@ -36,19 +36,8 @@ MAPPER_SYSTEM = """Bạn chuẩn hoá câu nói tiếng Việt: đổi từ đ�
 - Câu đã chuẩn thì chép lại y nguyên.
 - Chỉ trả lời câu đã chuẩn hoá, không giải thích."""
 
-MAPPER_SHOTS = [
-    ("mai mấy giờ tàu ra huế rứa", "mai mấy giờ có tàu ra huế vậy"),
-    ("đặt cho tui cái lịch họp chiều ni", "đặt cho tôi cái lịch họp chiều nay"),
-    ("chừ mở cái quạt trong buồng ngủ đi", "bây giờ mở cái quạt trong phòng ngủ đi"),
-    ("ổng nhắn gì cho tui hông", "ông ấy nhắn gì cho tôi không"),
-    ("bật đèn phòng khách", "bật đèn phòng khách"),
-    ("book xe về nhà lúc 5 giờ chiều", "book xe về nhà lúc 5 giờ chiều"),
-]
-
-
 def mapper_conv(text):
-    shots = [m for q, a in MAPPER_SHOTS for m in ({"role": "user", "content": q}, {"role": "assistant", "content": a})]
-    return [{"role": "system", "content": MAPPER_SYSTEM}, *shots, {"role": "user", "content": text}]
+    return [{"role": "system", "content": MAPPER_SYSTEM}, {"role": "user", "content": text}]
 
 
 # ---------------------------------------------------------------- planner / verifier prompts

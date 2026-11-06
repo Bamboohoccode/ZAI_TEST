@@ -13,7 +13,9 @@ if __name__ == "__main__":
     parser.add_argument("--epoch", type=int, default=15)
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--lr", type=float, default=2e-5)
-    parser.add_argument("--input_json", default=None, help="train on a JSON file (list of {'spoken','formatted'}), e.g. dataset_vietnam_money.json, instead of VietAI/spoken_norm_assignment")
+    parser.add_argument("--input_json", default=None, help="JSON file (list of {'spoken','formatted'}), e.g. dataset_vietnam_money.json; mixed into VietAI/spoken_norm_assignment unless --only_json")
+    parser.add_argument("--only_json", action="store_true", help="train on --input_json only; without it the JSON is mixed into the VietAI data")
+    parser.add_argument("--viet_frac", type=float, default=0.02, help="fraction of the VietAI train set to use (1 = all); ignored with --only_json")
     parser.add_argument("--checkpoint_path", default=None, help="fine-tune from this checkpoint instead of the base bert2bert model")
     parser.add_argument("--skip_init_model", action="store_true", help="do not call init_model (no base-model init); load --checkpoint_path directly")
     args = parser.parse_args()
@@ -27,14 +29,18 @@ if __name__ == "__main__":
         if args.checkpoint_path is not None:
             roberta, tokenizer = model.load_checkpoint(args.checkpoint_path)
 
-    dataset = preprocess.init_data(args.input_json)
+    if not 0 < args.viet_frac <= 1:
+        parser.error("--viet_frac must be in (0, 1]")
+    if args.only_json and not args.input_json:
+        parser.error("--only_json requires --input_json")
+    dataset = preprocess.init_data(args.input_json, args.only_json, args.viet_frac)
 
     data_collator = preprocess.DataCollatorInvertTextNormalization(tokenizer, model=roberta)
 
     num_epochs = args.epoch
     checkpoint_path = "./checkpoints"
     batch_size = args.batch_size
-    train_dataset = dataset['train'] if args.input_json else dataset['train'].shard(50, 0)  # full custom data; subsample the big default set
+    train_dataset = dataset['train']  # init_data already subsampled / mixed it
     steps_per_epoch = math.ceil(len(train_dataset) / batch_size)
     """
     eval_accumulation_steps (int, optional): 

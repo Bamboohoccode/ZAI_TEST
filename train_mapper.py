@@ -6,7 +6,7 @@ python train_mapper.py                          # ~3 epochs, saves ./mapper_lora
 python train_mapper.py --epochs 1 --limit 2000  # quick smoke test
 then: python pipeline.py ... --mapper-lora ./mapper_lora
 
-Training uses pipeline.mapper_conv (same system prompt + shots + chat template, thinking off) so train and inference
+Training uses pipeline.mapper_conv (same system prompt + chat template, thinking off) so train and inference
 see identical prompts. Text is lowercased and stripped of punctuation because the mapper's input is raw ASR output.
 """
 import argparse
@@ -80,7 +80,7 @@ def main():
     ap.add_argument("--lr", type=float, default=2e-4)
     ap.add_argument("--bs", type=int, default=16)
     ap.add_argument("--rank", type=int, default=16)
-    ap.add_argument("--max-len", type=int, default=768, help="prompt with shots is ~350 tokens")
+    ap.add_argument("--max-len", type=int, default=768, help="prompt without shots is ~100 tokens")
     ap.add_argument("--limit", type=int, default=0, help="use only the first N train rows (smoke test)")
     ap.add_argument("--eval", type=int, default=200, help="test rows for the final exact-match check, 0 = skip")
     ap.add_argument("--seed", type=int, default=0)
