@@ -9,22 +9,32 @@ from my_trainer import InvertTextNormalizationTrainer
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 if __name__ == "__main__":
-    roberta, tokenizer = model.init_model()
-
-    dataset = preprocess.init_data()
-
-    data_collator = preprocess.DataCollatorInvertTextNormalization(tokenizer, model=roberta)
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--epoch", type=int, default=15)
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--lr", type=float, default=2e-5)
+    parser.add_argument("--input_json", default=None, help="train on a JSON file (list of {'spoken','formatted'}), e.g. dataset_vietnam_money.json, instead of VietAI/spoken_norm_assignment")
+    parser.add_argument("--checkpoint_path", default=None, help="fine-tune from this checkpoint instead of the base bert2bert model")
+    parser.add_argument("--skip_init_model", action="store_true", help="do not call init_model (no base-model init); load --checkpoint_path directly")
     args = parser.parse_args()
+
+    if args.skip_init_model:
+        if args.checkpoint_path is None:
+            parser.error("--skip_init_model requires --checkpoint_path")
+        roberta, tokenizer = model.load_checkpoint(args.checkpoint_path)
+    else:
+        roberta, tokenizer = model.init_model()
+        if args.checkpoint_path is not None:
+            roberta, tokenizer = model.load_checkpoint(args.checkpoint_path)
+
+    dataset = preprocess.init_data(args.input_json)
+
+    data_collator = preprocess.DataCollatorInvertTextNormalization(tokenizer, model=roberta)
 
     num_epochs = args.epoch
     checkpoint_path = "./checkpoints"
     batch_size = args.batch_size
-    train_dataset = dataset['train'].shard(50, 0)
+    train_dataset = dataset['train'] if args.input_json else dataset['train'].shard(50, 0)  # full custom data; subsample the big default set
     steps_per_epoch = math.ceil(len(train_dataset) / batch_size)
     """
     eval_accumulation_steps (int, optional): 

@@ -471,6 +471,26 @@ def init_tokenizer():
     return tokenizer
 
 
+def load_checkpoint(checkpoint_path):
+    """Load a fine-tuned checkpoint directly, without init_model (no base-model download)."""
+    import os
+    from safetensors.torch import load_file
+    from transformers import GenerationConfig
+    from model_config import InvertTextNormalizationConfig
+    tokenizer = init_tokenizer()
+    # Same loading as infer.py: from_pretrained crashes on transformers 5.x for the custom decoder.
+    roberta = InvertTextNormalization(InvertTextNormalizationConfig.from_pretrained(checkpoint_path))
+    print(roberta.load_state_dict(load_file(os.path.join(checkpoint_path, "model.safetensors")), strict=False))
+    roberta.tie_weights()  # lm_head is tied to the embeddings and absent from the checkpoint
+    try:
+        roberta.generation_config = GenerationConfig.from_pretrained(checkpoint_path)
+    except OSError:
+        roberta.generation_config.max_length = 200
+        roberta.generation_config.no_repeat_ngram_size = 3
+    roberta.generation_config.num_beams = 1
+    return roberta, tokenizer
+
+
 def init_model():
     tokenizer = init_tokenizer()
 

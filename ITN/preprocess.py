@@ -137,8 +137,18 @@ def create_invert_text_norm(item_1, item_2):
     return src_list, tgt_list
 
 # data init
-def init_data():
-    dataset = datasets.load_dataset('VietAI/spoken_norm_assignment')
+def init_data(json_path=None):
+    if json_path:
+        import json
+        with open(json_path, encoding="utf-8") as f:
+            records = json.load(f)
+        # each record is one span: spoken form -> written form
+        rows = [{"src": [r["spoken"]], "tgt": [r["formatted"]]} for r in records]
+        # use every record for training; valid is the same data (only used for eval loss / best-checkpoint selection)
+        full = datasets.Dataset.from_list(rows)
+        dataset = datasets.DatasetDict({"train": full, "valid": full})
+    else:
+        dataset = datasets.load_dataset('VietAI/spoken_norm_assignment')
 
     print("Dataset: ", dataset)
     return dataset
