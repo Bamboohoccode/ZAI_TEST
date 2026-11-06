@@ -126,7 +126,7 @@ class DataCollatorInvertTextNormalization:
 def create_invert_text_norm(item_1, item_2):
     src_list, tgt_list = [], []
     for src, tgt in zip(item_1, item_2):
-        if len(src) == len(tgt):
+        if src == tgt:  # unchanged word: keep only 10% (was len(src) == len(tgt), which also dropped changed spans like 'năm xị' -> '500000')
             if random.random() < 0.1:
                 src_list.append(src)
                 tgt_list.append(tgt)
@@ -136,8 +136,123 @@ def create_invert_text_norm(item_1, item_2):
     
     return src_list, tgt_list
 
+# sentence templates for the JSON spans: "{}" is one slot, filled by a sampled record's spoken/formatted form.
+# Written for money/price spans (dataset_vietnam_money.json); pass --template_file for other kinds of spans.
+TEMPLATES = [
+    "Qua đây tôi bán cho anh cái xe máy {} với con laptop {}",
+    "Chuyển khoản cho chị Lan {} vào tài khoản sáng nay",
+    "Cái điện thoại này giá {} chứ không rẻ hơn đâu",
+    "Hôm qua em mới mua cái tủ lạnh hết {}",
+    "Tháng này tiền điện nhà mình mất {}",
+    "Bạn ấy vừa nhận lương {} rồi đi ăn liền",
+    "Cho tôi vay {} đến cuối tháng trả nhé",
+    "Phòng trọ này thuê một tháng {} cả điện nước",
+    "Ông chủ trả công {} cho mỗi ngày làm việc",
+    "Đặt cho tôi cái bàn học giá khoảng {} thôi",
+    "Ăn tối hôm nay tổng cộng hết {} đó",
+    "Anh đưa em {} để đóng học phí cho con",
+    "Chiếc xe đạp này bán lại được {} còn cái máy giặt thì {}",
+    "Mình đã trả trước {} còn lại {} thì trả sau",
+    "Vé máy bay ra Hà Nội đang giảm còn {}",
+    "Nhớ nhắc tôi đóng tiền mạng {} vào cuối tuần",
+    "Quán cà phê này một ly có {} thôi mà ngon lắm",
+    "Sửa cái điều hòa tốn {} mà vẫn chưa chạy",
+    "Hóa đơn tháng trước là {} còn tháng này là {}",
+    "Gửi giúp mình {} cho bạn Nam qua ví điện tử",
+]
+
+
+# Money is always written "đ": no "vnđ", no "đồng", whatever the spoken form ("năm xị", "trăm hai", "việt nam đồng"...).
+# VietAI writes the same amount as "N vnđ" / "N đồng" / "N đ" (about 1/3 each), so its targets are mapped to "đ" too,
+# in the plain amount ("232 đồng" -> "232 đ") and in compound units ("725 đồng/ml" -> "725 đ/ml", "865 cm/vnđ" -> "865 cm/đ").
+# "đô la" is untouched: VietAI already writes it "$" (120 plain + compound units, no other form).
+# Safety: "đ" is never ADDED, and a span is only touched when its spoken form says it is money (đồng), so codes
+# ("đờ ngang chín không không" -> "đ-900"), dates ("ngày 30/06/1150") and ids keep their written form.
+MONEY_CUE_RE = re.compile(r"đồng", re.I)  # not "đê": it is also the letter d in spoken codes ("vê en đê gờ")
+MONEY_END_RE = re.compile(r"^(.*?\d)\s*(?:vnđ|vnd|đồng|đ)$", re.I)  # amount + unit at the very end
+GLUED_AMOUNT_RE = re.compile(r"^(-?[\d.,]+)đ$")  # "600đ": a bare number with đ glued on can only be an amount
+MONEY_UNIT_RE = re.compile(r"(\d\s*|/)(?:vnđ|vnd|đồng)(?![\w])", re.I)  # unit inside a compound ("đồng/ml", "cm/vnđ")
+
+
+def normalize_money(spoken, written, trusted=False):
+    """Written form of a money span with its unit as 'đ'. `trusted`: the span is known to be money (the JSON file),
+    otherwise the spoken form must contain a money cue. Anything else is returned unchanged."""
+    g = GLUED_AMOUNT_RE.match(written)
+    if g:
+        return f"{g.group(1)} đ"
+    if not trusted and not MONEY_CUE_RE.search(spoken):
+        return written
+    m = MONEY_END_RE.match(written)
+    if m:
+        return f"{m.group(1)} đ"
+    return MONEY_UNIT_RE.sub(lambda m: m.group(1) + "đ", written)
+
+
+def normalize_example(ex):
+    """datasets.map fn: money targets of the changed spans -> 'đ'."""
+    return {"tgt": [normalize_money(s, t) if t != s else t for s, t in zip(ex["src"], ex["tgt"])]}
+
+
+def audit_money(name, rows):
+    """Checks to pass before training. rows: iterable of (src list, tgt list). Raises if a money span still ends in vnđ/đồng."""
+    n_money = n_leftover = 0
+    left = []
+    for src, tgt in rows:
+        for s, t in zip(src, tgt):
+            if s != t and MONEY_CUE_RE.search(s):
+                n_money += 1
+                if re.search(r"(\d\s*|/)(?:vnđ|vnd|đồng)(?![\w])", t, re.I):
+                    n_leftover += 1
+                    left.append((s, t))
+    print(f"[money audit] {name}: {n_money} money spans (spoken has đồng), {n_leftover} still written vnđ/đồng")
+    if n_leftover:
+        raise ValueError(f"{name}: money targets not normalized, e.g. {left[:3]}")
+
+
+def load_templates(path=None):
+    """One template per line, '{}' marks a slot (at least one per line). Default: TEMPLATES."""
+    if not path:
+        return TEMPLATES
+    with open(path, encoding="utf-8") as f:
+        t = [l.strip() for l in f if l.strip() and "{}" in l]
+    if not t:
+        raise ValueError(f"no template with a '{{}}' slot in {path}")
+    return t
+
+
+def apply_templates(records, templates=None, repeat=1, bare_prob=0.2, seed=0):
+    """records: [{'spoken','formatted'}] -> rows {'src': [...], 'tgt': [...]} in the VietAI layout:
+    every template word is a (word, word) pair, every slot is one (spoken, formatted) pair.
+    Each record fills the first slot of `repeat` sentences; other slots (and the template) are sampled, so each
+    record is seen at least `repeat` times. With probability bare_prob the span is kept alone, as before."""
+    rng = random.Random(seed)
+    templates = templates or TEMPLATES
+    pair = lambda rec: (rec["spoken"], normalize_money(rec["spoken"], rec["formatted"], trusted=True))  # noqa: E731
+    rows = []
+    for _ in range(repeat):
+        for r in records:
+            if rng.random() < bare_prob:
+                sp, fm = pair(r)
+                rows.append({"src": [sp], "tgt": [fm]})
+                continue
+            first, src, tgt = True, [], []
+            for part in re.split(r"(\{\})", rng.choice(templates)):
+                if part == "{}":
+                    rec = r if first else records[rng.randrange(len(records))]
+                    first = False
+                    sp, fm = pair(rec)
+                    src.append(sp)
+                    tgt.append(fm)
+                else:
+                    src += part.split()
+                    tgt += part.split()
+            rows.append({"src": src, "tgt": tgt})
+    return rows
+
+
 # data init
-def init_data(json_path=None, only_json=False, viet_frac=0.02):
+def init_data(json_path=None, only_json=False, viet_frac=0.02, template=True, template_file=None, template_repeat=1,
+              bare_prob=0.2):
     """Default: VietAI/spoken_norm_assignment (random viet_frac of train, 1.0 = all).
     json_path (list of {'spoken','formatted'} spans):
       only_json=True  -> train and valid are that file only
@@ -147,14 +262,21 @@ def init_data(json_path=None, only_json=False, viet_frac=0.02):
         import json
         with open(json_path, encoding="utf-8") as f:
             records = json.load(f)
-        # each record is one span: spoken form -> written form
-        rows = [{"src": [r["spoken"]], "tgt": [r["formatted"]]} for r in records]
+        n_fix = sum(normalize_money(r["spoken"], r["formatted"], trusted=True) != r["formatted"] for r in records)
+        print(f"JSON: {len(records)} spans, {n_fix} money targets rewritten to 'đ'")
+        if template:  # put each span into a sampled sentence template (context words stay unchanged)
+            rows = apply_templates(records, load_templates(template_file), template_repeat, bare_prob)
+            for r in rows[:3]:
+                print("Template sample:", " ".join(r["src"]), "=>", " ".join(r["tgt"]))
+        else:  # each record is one span: spoken form -> written form
+            rows = [{"src": [r["spoken"]], "tgt": [normalize_money(r["spoken"], r["formatted"], trusted=True)]} for r in records]
         extra = datasets.Dataset.from_list(rows)
     if json_path and only_json:
         # use every record for training; valid is the same data (only used for eval loss / best-checkpoint selection)
         dataset = datasets.DatasetDict({"train": extra, "valid": extra})
     else:
         dataset = datasets.load_dataset('VietAI/spoken_norm_assignment')
+        dataset = dataset.map(normalize_example)  # VietAI money targets -> "N đ"
         train = dataset['train']
         if viet_frac < 1:  # subsample the big default set (random, fixed seed)
             train = train.shuffle(seed=0).select(range(max(1, int(len(train) * viet_frac))))
@@ -164,6 +286,11 @@ def init_data(json_path=None, only_json=False, viet_frac=0.02):
             print(f"Train: {len(train) - len(extra)} VietAI + {len(extra)} from {json_path}")
         dataset = datasets.DatasetDict({"train": train, "valid": dataset['valid']})
 
+    # nothing is trained before the money targets pass the audit
+    for split in ("train", "valid"):
+        if split == "valid" and dataset["valid"] is dataset["train"]:
+            continue
+        audit_money(split, zip(dataset[split]["src"], dataset[split]["tgt"]))
     print("Dataset: ", dataset)
     return dataset
 
