@@ -6,6 +6,7 @@ python pipeline.py --root DATA --split public_test                              
 python pipeline.py --root DATA --split train --text --limit 100                      # skip ASR, use audio_text
 python pipeline.py --root DATA --split public_test --asr-ckpt ft/asr.pt --llm ./llm_ft --mapper-lora ./mapper_lora
 python pipeline.py --root DATA --split train --text --llm gold --mapper none --limit 50   # replay labels, no GPU
+python pipeline.py --root DATA --split public_test --asr-model zipformer --bias       # Zipformer + search-key biasing
 """
 import argparse
 import gc
@@ -19,7 +20,11 @@ import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from bias import app_pools, build_lexicon, common_words, snap_text, snap_value  # noqa: E402
+
 ASR_MODEL = "khanhld/chunkformer-ctc-large-vie"
+ZIPFORMER_MODEL = "hynt/Zipformer-30M-RNNT-6000h"
 MAPPER_MODEL = "Qwen/Qwen3-0.6B"
 LLM_MODEL = "Qwen/Qwen3-4B-Instruct-2507"
 MAX_CTX = 16384
@@ -351,8 +356,11 @@ def load_itn(folder_path, device="cpu", code_dir=None):
     return itn
 
 
-def run_asr(model, paths):
-    """CTC greedy decode of one sample's files (history turns + query) in one batched call (deterministic)."""
+def run_asr(model, paths, hotwords=None):
+    """Decode one sample's files (history turns + query) in one batched call (deterministic).
+    ChunkFormer: CTC greedy. Zipformer (ZipformerASR): RNNT, `hotwords` bias the decoding when it was built with bias=True."""
+    if hasattr(model, "rec"):  # ZipformerASR
+        return model.transcribe([str(p) for p in paths], hotwords=hotwords)
     import torch
     with torch.no_grad():
         texts = model.batch_decode(audio_paths=[str(p) for p in paths], chunk_size=64, left_context_size=128,
@@ -381,7 +389,25 @@ def plan_step(llm, msgs, tools, trace, rounds, deadline):
         feedback = [{"role": "assistant", "content": out}, {"role": "user", "content": REPLAN.format(reason=reason)}]
 
 
-def run_agent(env, llm, msgs, tools, catalog, trace, rounds=VERIFY_ROUNDS, deadline=float("inf")):
+# search keys: the string arguments that must name an entity of the user's own data (contact, channel, room...)
+SEARCH_KEYS = {"contacts.search": "query", "tv.guide": "channel", "tv.tune": "channel", "loyalty.list_vouchers": "merchant",
+               "loyalty.get_points": "program", "loyalty.redeem": "program", "household_chores.assign": "assignee",
+               "smart_home.get_status": "room", "podcast_radio.play": "station"}
+
+
+def snap_search_keys(call, pools, trace):
+    """Search-key biasing: snap the entity argument of a tool call to the closest name in that app's state (by sound)."""
+    k = SEARCH_KEYS.get(call["name"])
+    pool = pools.get(call["name"].split(".")[0])
+    old = call["arguments"].get(k)
+    if k and pool and isinstance(old, str):
+        new = snap_value(old, pool)
+        if new != old:
+            call["arguments"][k] = new
+            trace.append({"snap": {"tool": call["name"], "arg": k, "from": old, "to": new}})
+
+
+def run_agent(env, llm, msgs, tools, catalog, trace, rounds=VERIFY_ROUNDS, deadline=float("inf"), pools=None):
     done = set()
     for _ in range(MAX_STEPS):
         if time.time() > deadline:  # keep the calls that already ran
@@ -394,6 +420,8 @@ def run_agent(env, llm, msgs, tools, catalog, trace, rounds=VERIFY_ROUNDS, deadl
         msgs.append(assistant_msg(re.sub(r"<tool_call>.*?</tool_call>", "", out, flags=re.S).strip(), calls))
         stop = False
         for c in calls:
+            if pools:
+                snap_search_keys(c, pools, trace)
             key = json.dumps(c, sort_keys=True, ensure_ascii=False)
             v = env.validate(c["name"], c["arguments"])  # not logged: invalid calls never reach the submission
             # the planner's own message is excluded: it would make every invented ID look seen
@@ -420,6 +448,12 @@ def main():
     ap.add_argument("--split", default="public_test")
     ap.add_argument("--out", default="submission.jsonl")
     ap.add_argument("--asr", default=ASR_MODEL, help="ChunkFormer HF id or local (fine-tuned) folder")
+    ap.add_argument("--asr-model", choices=["chunkformer", "zipformer"], default="chunkformer", help="ASR engine")
+    ap.add_argument("--zipformer", default=ZIPFORMER_MODEL, help="Zipformer HF id or local folder (sherpa-onnx files)")
+    ap.add_argument("--zipformer-threads", type=int, default=4)
+    ap.add_argument("--bias", action="store_true",
+                    help="search-key biasing: lexicon from the sample's state.json -> Zipformer hotwords, snap ASR text, snap tool search keys")
+    ap.add_argument("--hotword-score", type=float, default=2.0)
     ap.add_argument("--asr-ckpt", help="fine-tuned ChunkFormer .pt loaded onto --asr")
     ap.add_argument("--asr-device", default="cuda:0")
     ap.add_argument("--itn", help="folder of the ITN checkpoint trained by ITN/main.py; runs on ASR text before the mapper")
@@ -462,7 +496,14 @@ def main():
     t_start = time.time()
 
     # all models stay resident (GPU split: ASR + mapper --mapper-gpu-mem + llm --gpu-mem); each sample runs end to end
-    asr = None if a.text else load_asr(a.asr, a.asr_ckpt, a.asr_device)
+    if a.text:
+        asr = None
+    elif a.asr_model == "zipformer":
+        from asr_zipformer import ZipformerASR
+        asr = ZipformerASR(a.zipformer, num_threads=a.zipformer_threads, bias=a.bias, hotwords_score=a.hotword_score)
+    else:
+        asr = load_asr(a.asr, a.asr_ckpt, a.asr_device)
+    common = common_words(root / "train" / "train.jsonl") if a.bias and (root / "train" / "train.jsonl").exists() else frozenset()
     itn = load_itn(a.itn, a.itn_device, a.itn_code) if a.itn else None
     m_args = (a.mapper, a.mapper_lora, a.mapper_gpu_mem, a.seed, 2048, 256, {"enable_thinking": False}, a.eager)
     mapper = None if a.mapper == "none" or gold else RemoteVLLM(a.mapper_device, *m_args) if a.mapper_device else VLLM(*m_args)
@@ -472,11 +513,20 @@ def main():
         for i, item in enumerate(items):
             t0 = time.time()  # the time limit covers ASR and mapper of this sample too
             env = ToolEnv(a.split, item["id"], root=str(root))
-            trace, raw, texts, keep = [], [], [], 0
+            trace, raw, texts, keep, pools = [], [], [], 0, None
             try:
                 # 1. ASR of every user turn: history first, then the query, in one batch
                 turns = [h for h in item["history"] if h["role"] == "user"] + [item]
-                raw = [u["audio_text"] for u in turns] if a.text else run_asr(asr, [root / a.split / u["audio"] for u in turns])
+                lex = []
+                if a.bias:  # entities of this sample: its own app data + profile + loanword glossary
+                    state = root / a.split / f"{a.split}_environment" / item["id"] / "state.json"
+                    lex = build_lexicon(state, item["context"])
+                    pools = app_pools(state)
+                raw = [u["audio_text"] for u in turns] if a.text else run_asr(asr, [root / a.split / u["audio"] for u in turns], lex or None)
+                if lex and not a.text:  # fix near-miss entities left after decoding ("gia lô" -> "Zalo")
+                    snapped = [snap_text(r, lex, common) for r in raw]
+                    trace.extend({"snap_text": {"from": r, "changes": ch}} for r, (_, ch) in zip(raw, snapped) if ch)
+                    raw = [t for t, _ in snapped]
                 # 2. ITN (spoken -> written numbers/dates), then dialect mapper; empty output keeps the previous text
                 itn_out = [itn(r) or r for r in raw] if itn else raw
                 texts = [m or r for r, m in zip(itn_out, mapper.chat([mapper_conv(r) for r in itn_out]))] if mapper else itn_out
@@ -489,7 +539,7 @@ def main():
                     msgs = build_messages(item, texts, keep)
                 if gold:
                     llm.queue = list(item["label"]["tool_calls"])
-                run_agent(env, llm, msgs, tools, catalog, trace, rounds)
+                run_agent(env, llm, msgs, tools, catalog, trace, rounds, pools=pools)
             except Exception as e:  # keep what already ran; a crash must still write the line
                 trace.append({"error": f"{type(e).__name__}: {str(e)[:300]}", "traceback": traceback.format_exc()})
                 if not shown_tb:  # full traceback of the first failure in the log; the rest are in the trace file
