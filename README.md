@@ -25,7 +25,6 @@ Repo dự án **LifeMate** cho Zalo AI Challenge 2026: agent nhận giọng nói
 ├── textnorm/                # dùng chung: norm, WER, đọc số tiếng Việt (vi_num)
 ├── mapper/                  # seq2seq mapper (ViT5/BARTpho), tn_agy.py (TN bằng LLM, chỉ dùng lúc chuẩn bị dữ liệu)
 ├── ITN/                     # inverse text normalization (bert2BERT)
-├── Dual_ChunkFormer/        # ASR ChunkFormer
 ├── notebooks/               # fine-tune Zipformer / mapper, Kaggle hotword + RNNLM
 ├── docs/
 └── data/                    # không commit: dữ liệu BTC và jsonl sinh ra (asr_train*.jsonl...)

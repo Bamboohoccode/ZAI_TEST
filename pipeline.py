@@ -9,6 +9,8 @@ python pipeline.py --root DATA --split train --text --llm gold --mapper none --l
 python pipeline.py --root DATA --split public_test --asr-model zipformer --bias       # Zipformer + search-key biasing
 python pipeline.py --root DATA --split public_test --asr-model zipformer --hotwords-file hotwords/hotwords_global.txt \
     --vad --lm lm/rnnlm/rnnlm.onnx --lm-scale 0.3                                       # hotword cố định (không state.json) + VAD + LM
+python pipeline.py --root DATA --split train --asr-model zipformer --hotwords-file hotwords/hotwords_global.txt \
+    --no-llm --limit 200                                       # chỉ phần âm thanh (ASR->snap->fix->ITN), có nhãn -> in WER
 """
 import argparse
 import gc
@@ -445,6 +447,54 @@ def run_agent(env, llm, msgs, tools, catalog, trace, rounds=VERIFY_ROUNDS, deadl
             return
 
 
+def run_audio_only(a, items, asr, itn, common, g_alias, t_start):
+    """--no-llm: VAD/ASR -> snap_text -> asr_fix -> ITN cho mọi lượt user, không mapper/planner/tool.
+    Mỗi dòng --out: {"id", "turns": [{"turn", "audio", "asr", "snap", "fix", "itn", ["ref"]}]}.
+    Split có audio_text (train) -> in WER: dạng đọc (fix) so với ref đổi sang dạng đọc, dạng viết (itn) so với norm(ref)."""
+    from textnorm.textutil import norm, wer_counts
+    from textnorm.vi_num import to_spoken
+    root = Path(a.root)
+    tot = {"fix": [0, 0], "itn": [0, 0]}
+    with open(a.out, "w", encoding="utf-8") as fout:
+        for i, item in enumerate(items):
+            t0 = time.time()
+            turns = [h for h in item["history"] if h["role"] == "user"] + [item]
+            lex = []
+            if a.bias:
+                lex = build_lexicon(root / a.split / f"{a.split}_environment" / item["id"] / "state.json", item["context"])
+            asr_out = ([u["audio_text"] for u in turns] if asr is None
+                       else run_asr(asr, [root / a.split / u["audio"] for u in turns], lex or None))
+            snap = asr_out
+            if lex:
+                snap = [snap_text(r, lex, common)[0] for r in asr_out]
+            elif g_alias:
+                snap = [snap_text(r, [], common, aliases=g_alias)[0] for r in asr_out]
+            fix = snap if a.no_asr_fix else [fix_text(r)[0] for r in snap]
+            itn_out = [itn(r) or r for r in fix] if itn else fix
+            rows = []
+            for k, (u, r0, r1, r2, r3) in enumerate(zip(turns, asr_out, snap, fix, itn_out)):
+                row = {"turn": "QUERY" if k == len(turns) - 1 else f"u{k + 1}", "audio": u["audio"],
+                       "asr": r0, "snap": r1, "fix": r2, "itn": r3}
+                if u.get("audio_text"):
+                    ref = u["audio_text"]
+                    row["ref"] = ref
+                    for key, hyp, rf in (("fix", norm(r2), to_spoken(ref, norm(r2)) or norm(ref)), ("itn", norm(r3), norm(ref))):
+                        e, n = wer_counts(rf, hyp)
+                        tot[key][0] += e
+                        tot[key][1] += n
+                rows.append(row)
+            fout.write(json.dumps({"id": item["id"], "turns": rows}, ensure_ascii=False) + "\n")
+            changed = sum(r["asr"] != r["fix"] for r in rows)
+            print(f"[{i + 1}/{len(items)}] {item['id']} {len(rows)} lượt, snap/fix đổi {changed} "
+                  f"{time.time() - t0:.1f}s | {rows[-1]['itn'][:90]}", flush=True)
+    total = time.time() - t_start
+    print(f"\n{len(items)} samples -> {a.out} | avg {total / max(len(items), 1):.1f}s/sample")
+    if tot["fix"][1]:
+        print(f"WER dạng đọc (asr->snap->fix vs ref dạng đọc): {tot['fix'][0] / tot['fix'][1]:.4f}")
+        if itn:
+            print(f"WER dạng viết (sau ITN vs norm(ref))       : {tot['itn'][0] / tot['itn'][1]:.4f}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", required=True, help="folder holding the split folders")
@@ -482,9 +532,14 @@ def main():
     ap.add_argument("--eager", action="store_true", help="vLLM enforce_eager: skip CUDA graphs (slower, avoids capture errors)")
     ap.add_argument("--verify-rounds", type=int, default=VERIFY_ROUNDS)
     ap.add_argument("--text", action="store_true", help="use audio_text instead of ASR (train only)")
+    ap.add_argument("--no-llm", action="store_true",
+                    help="chỉ chạy phần xử lý âm thanh (VAD/ASR -> snap -> asr_fix -> ITN), không mapper/planner/tool; "
+                         "ghi text từng bước ra --out (mặc định asr_out.jsonl), split có nhãn -> in WER")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
+    if a.no_llm and a.out == "submission.jsonl":  # đừng ghi đè file nộp bằng output không có tool call
+        a.out = "asr_out.jsonl"
     gold = a.llm == "gold"
     rounds = 0 if gold else a.verify_rounds
 
@@ -501,7 +556,8 @@ def main():
 
     root = Path(a.root)
     sys.path.insert(0, str(root / a.split))
-    from zaic_tools import ToolEnv
+    if not a.no_llm:
+        from zaic_tools import ToolEnv
     catalog = {t["name"]: t for app in json.load(open(root / a.split / f"{a.split}_tools_catalog.json", encoding="utf-8"))["apps"]
                for t in app["tools"]}
     items = [json.loads(l) for l in open(root / a.split / f"{a.split}.jsonl", encoding="utf-8") if l.strip()]
@@ -522,6 +578,8 @@ def main():
     from hotwords.bias import load_global
     g_alias = load_global(Path(a.hotwords_file).with_suffix(".json")) if a.hotwords_file and Path(a.hotwords_file).with_suffix(".json").exists() else None
     itn = load_itn(a.itn, a.itn_device, a.itn_code) if a.itn else None
+    if a.no_llm:
+        return run_audio_only(a, items, asr, itn, common, g_alias, t_start)
     m_args = (a.mapper, a.mapper_lora, a.mapper_gpu_mem, a.seed, 2048, 256, {"enable_thinking": False}, a.eager)
     mapper = None if a.mapper == "none" or gold else RemoteVLLM(a.mapper_device, *m_args) if a.mapper_device else VLLM(*m_args)
     llm = GoldLLM() if gold else VLLM(a.llm, a.llm_lora, a.gpu_mem, a.seed, MAX_CTX, MAX_NEW, None, a.eager)

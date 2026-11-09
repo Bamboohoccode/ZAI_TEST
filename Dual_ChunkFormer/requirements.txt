@@ -1,8 +1,0 @@
-torch
-transformers
-peft
-trl
-datasets
-chunkformer
-pyyaml
-numpy
