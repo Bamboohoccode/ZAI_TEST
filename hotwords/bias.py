@@ -126,6 +126,26 @@ def hotwords(entities, score=2.0, upper=True):
     return "\n".join(f"{' '.join(tokens(e)).upper() if upper else e} :{score}" for e in entities if tokens(e))
 
 
+def is_proper(e):
+    """tên riêng / viết tắt: có chữ hoa ngoài chữ cái đầu (Sân bóng Mini, SMS, Phạm Hùng) hoặc 1 từ viết hoa (Lan, Zalo).
+    'Tài khoản thanh toán', 'Gia đình' (chỉ hoa chữ đầu câu) là cụm thường."""
+    w = e.split()
+    return any(c.isupper() for c in e[1:]) or (len(w) == 1 and e[:1].isupper())
+
+
+def hotword_lines(entities, hi=2.5, lo=1.5, glossary_score=1.0, glossary=GLOSSARY):
+    """hotword chia điểm: tên riêng -> hi, cụm thường -> lo, từ ngoại viết thường của glossary (podcast, voucher...)
+    -> glossary_score thấp (0 = bỏ hẳn, nhưng trên dev bỏ hẳn làm WER 0.175 -> 0.185). Score đều 2.0 cho mọi thứ từng kéo
+    'đặt báo thức' -> 'tập podcast', 'hàng xóm' -> 'hàng sáu'."""
+    gl = {g.lower() for g in glossary if g == g.lower()}
+    out = []
+    for e in entities:
+        s = glossary_score if e.lower() in gl else hi if is_proper(e) else lo
+        if s > 0 and tokens(e):
+            out.append(hotwords([e], s))
+    return "\n".join(out)
+
+
 # ------------------------------------------------------------------ snapping
 
 LETTERS = {"s": "ét", "m": "em", "j": "gi", "c": "xê", "e": "e", "v": "vê", "n": "en", "q": "quy", "r": "rờ", "a": "a",
@@ -162,24 +182,30 @@ def _covered(win, ew, thr=0.8):
     return sum(max(ratio(phon(w), phon(x)) for x in win) >= thr for w in ew) / len(ew)
 
 
-def snap_text(text, entities, common=frozenset(), thr=0.9, thr_short=0.9, size_penalty=0.04):
+def snap_text(text, entities, common=frozenset(), thr=0.9, thr_short=0.9, size_penalty=0.04, name_guard=True,
+              aliases=None):
     """(new_text, changes). Duyệt entity dài trước; mỗi đoạn hyp chỉ bị thay một lần.
     Bỏ qua entity đã xuất hiện đúng trong câu; entity một âm tiết tiếng Việt (Lan, Bống...) không bao giờ bị snap
     (dễ đè lên từ thường chỉ khác dấu), chỉ snap entity ngoại / viết tắt / nhiều từ."""
     words = text.split()
     low = [re.sub(r"[^\w'-]", "", w.lower()) for w in words]
     used, changes, repl = [False] * len(words), [], {}
-    for surf, ew, ek, disp in sorted(_aliases(entities), key=lambda a: -len(a[2])):
+    for surf, ew, ek, disp in sorted(aliases if aliases is not None else _aliases(entities), key=lambda a: -len(a[2])):
         n, best = len(ew), None
         if len(ek) < 3 or _has_run(low, tokens(disp)):
             continue
         if n == 1 and _VI_SYL.match(ew[0]):
             continue
+        # tên người tiếng Việt (Lê Minh, Phạm Hùng): mọi âm tiết là âm tiết Việt viết hoa
+        person = name_guard and n > 1 and all(_VI_SYL.match(w) for w in ew) and all(x[:1].isupper() for x in disp.split()[-n:])
         for size in range(max(1, n - 1), n + 2):
             for i in range(len(words) - size + 1):
                 if any(used[i:i + size]):
                     continue
                 win = low[i:i + size]
+                # "nhé mình" -> "Lê Minh": cửa sổ toàn từ thường, chỉ khớp nhờ gộp l/n + bỏ dấu -> không phải tên
+                if person and all(w in common for w in win) and strip_tones(" ".join(win)) != strip_tones(" ".join(ew)):
+                    continue
                 r = ratio(key(win), ek)
                 if r < 1.0 and size > 1 and any(w in common and len(w) <= 2 for w in win):  # đừng nuốt từ chức năng ngắn
                     continue
@@ -204,6 +230,19 @@ def snap_text(text, entities, common=frozenset(), thr=0.9, thr_short=0.9, size_p
             out.append(words[i])
             i += 1
     return " ".join(out), changes
+
+
+def load_global(path):
+    """hotwords_global.json (mine_hotwords.py) -> alias cho snap_text(aliases=...): mỗi dạng đọc / cách nghe sai lặp lại
+    của một cụm -> (surface, words, key, display). display = dạng viết (SMS, Zalo, check-in); mã có số giữ dạng đọc
+    ("ron chín lăm") để ITN đổi số. Dùng thay cho build_lexicon(state.json) khi không được đọc state."""
+    out = []
+    for r in json.load(open(path, encoding="utf-8")):
+        for al in r["aliases"]:
+            w = al.split()
+            if w:
+                out.append((r["display"], w, key(w), r["display"]))
+    return out
 
 
 def snap_value(value, entities, thr=0.8):

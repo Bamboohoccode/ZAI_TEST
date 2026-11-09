@@ -169,54 +169,46 @@ if __name__ == "__main__":
     output : ngày 9/1/1945 nạn đói bùng phát ở Việt Nam và ảnh hưởng tới 60 % dân
     """
 
+    def generate_span(span):
+        enc = tokenizer([span])
+        outputs = roberta.generate(input_ids=torch.tensor(enc['input_ids']),
+                                   attention_mask=torch.tensor(enc['attention_mask']),
+                                   num_beams=1, num_return_sequences=1)
+        text = tokenizer.decode(outputs[0].tolist(), skip_special_tokens=True)
+        # a generation can stop right after a BPE piece ("6@@" + eos): drop the dangling continuation marker
+        return re.sub(r"@@$", "", text.strip()).strip()
+
     for input_str in (args.input or list_inputs):
-        inputs = tokenizer([input_str])
-        input_ids = inputs['input_ids']
-        attention_mask = inputs['attention_mask']
-
-        inputs = {
-            "input_ids": torch.tensor(input_ids),
-            "attention_mask": torch.tensor(attention_mask),
-        }
-
-        encoder_outputs = roberta.encoder(**inputs)
-        spoken_tagging_output = roberta.spoken_tagging_classifier(roberta.dropout(encoder_outputs[0]))
-        spoken_tagging_output = torch.argmax(spoken_tagging_output, dim=-1).tolist()[0][1:-1] # Skip <bos> and <eos> token label
-
-        # print("Sequence Tagging:", spoken_tagging_output)
-
-        temp = ""
-        output_str = ""
-
         words = input_str.split()
-        for i, ele in enumerate(words):
-            tag = spoken_tagging_output[i] if i < len(spoken_tagging_output) else 0
-            if tag in [0, 1] or i == len(words) - 1:
-                if i == len(words) - 1:
-                    temp += " " + ele
-                if len(temp) > 0:
-                    inputs = tokenizer([temp])
-                    input_ids = inputs['input_ids']
-                    attention_mask = inputs['attention_mask']
+        # Build the input the way training does (preprocess_function): bos + each word's subwords + eos, so we know
+        # which subword starts each word. The tagger labels SUBWORDS (B on the first, I on the rest), e.g. "hóa" is
+        # h@@ ó@@ a, so tags must be read at each word's first subword, not at index = word position.
+        input_ids, first_tok = [tokenizer.bos_token_id], []
+        for w in words:
+            first_tok.append(len(input_ids))
+            input_ids.extend(tokenizer(w)['input_ids'][1:-1])
+        input_ids.append(tokenizer.eos_token_id)
 
-                    inputs = {
-                        "input_ids": torch.tensor(input_ids),
-                        "attention_mask": torch.tensor(attention_mask),
-                    }
+        with torch.no_grad():
+            encoder_outputs = roberta.encoder(input_ids=torch.tensor([input_ids]),
+                                              attention_mask=torch.ones(1, len(input_ids), dtype=torch.long))
+            logits = roberta.spoken_tagging_classifier(roberta.dropout(encoder_outputs[0]))
+        token_tags = torch.argmax(logits, dim=-1)[0].tolist()
+        word_tags = [token_tags[p] for p in first_tok]  # 0: O (keep), 1: B (span start), 2: I (span continues)
 
-                    outputs = roberta.generate(**inputs, output_attentions=True, num_beams=1, num_return_sequences=1)
+        # group words: O words are kept as is, B/I words form spans sent to the decoder
+        segments = []  # [is_span, [words]]
+        for w, tag in zip(words, word_tags):
+            if tag == 0:
+                segments.append([False, [w]])
+            elif tag == 2 and segments and segments[-1][0]:
+                segments[-1][1].append(w)
+            else:  # B, or an I with no open span
+                segments.append([True, [w]])
 
-                    for output in outputs.cpu().detach().numpy().tolist():
-                        decoded_output = tokenizer.decode(output, skip_special_tokens=True) 
-                        output_str += decoded_output if len(output_str) == 0 else " " + decoded_output
-                
-                if tag == 0:
-                    output_str += ele if len(output_str) == 0 else " " + ele
-                    temp = ""
-                else:
-                    temp = ele
-            else:
-                temp += ele if len(temp) == 0 else " " + ele
+        with torch.no_grad():
+            pieces = [generate_span(" ".join(ws)) if is_span else " ".join(ws) for is_span, ws in segments]
+        output_str = " ".join(p for p in pieces if p)
 
         print("Input:", input_str)
         print("Output:", output_str)

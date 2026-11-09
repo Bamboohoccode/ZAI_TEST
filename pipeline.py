@@ -7,6 +7,8 @@ python pipeline.py --root DATA --split train --text --limit 100                 
 python pipeline.py --root DATA --split public_test --asr-ckpt ft/asr.pt --llm ./llm_ft --mapper-lora ./mapper_lora
 python pipeline.py --root DATA --split train --text --llm gold --mapper none --limit 50   # replay labels, no GPU
 python pipeline.py --root DATA --split public_test --asr-model zipformer --bias       # Zipformer + search-key biasing
+python pipeline.py --root DATA --split public_test --asr-model zipformer --hotwords-file hotwords/hotwords_global.txt \
+    --vad --lm lm/rnnlm/rnnlm.onnx --lm-scale 0.3                                       # hotword cố định (không state.json) + VAD + LM
 """
 import argparse
 import gc
@@ -21,7 +23,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bias import app_pools, build_lexicon, common_words, snap_text, snap_value  # noqa: E402
+from hotwords.bias import app_pools, build_lexicon, common_words, snap_text, snap_value  # noqa: E402
+from asr.asr_fix import fix_text  # noqa: E402
 
 ASR_MODEL = "khanhld/chunkformer-ctc-large-vie"
 ZIPFORMER_MODEL = "hynt/Zipformer-30M-RNNT-6000h"
@@ -453,7 +456,17 @@ def main():
     ap.add_argument("--zipformer-threads", type=int, default=4)
     ap.add_argument("--bias", action="store_true",
                     help="search-key biasing: lexicon from the sample's state.json -> Zipformer hotwords, snap ASR text, snap tool search keys")
-    ap.add_argument("--hotword-score", type=float, default=2.0)
+    ap.add_argument("--hotword-score", type=float, default=2.0, help="score khởi tạo contextual graph (hotword thật dùng --hotword-hi/lo)")
+    ap.add_argument("--hotword-hi", type=float, default=2.5, help="hotword score cho tên riêng / viết tắt")
+    ap.add_argument("--hotword-lo", type=float, default=1.5, help="hotword score cho cụm thường (đèn bếp, tài khoản thanh toán)")
+    ap.add_argument("--glossary-score", type=float, default=1.0, help="score cho từ ngoại viết thường (podcast, voucher...); 0 = không làm hotword (dev: 0 kém hơn)")
+    ap.add_argument("--hotwords-file", help="hotword CỐ ĐỊNH (mine_hotwords.py -> hotwords_global.txt), không đọc state.json; "
+                                            "snap_text theo <file>.json")
+    ap.add_argument("--vad", action="store_true", help="cắt khoảng lặng bằng silero VAD trước Zipformer (vad.py)")
+    ap.add_argument("--lm", help="RNNLM onnx cho LM fusion (train_rnnlm.py -> rnnlm/rnnlm.onnx)")
+    ap.add_argument("--lm-scale", type=float, default=0.3)
+    ap.add_argument("--beam", type=int, default=4, help="max_active_paths của modified_beam_search")
+    ap.add_argument("--no-asr-fix", action="store_true", help="tắt luật sửa lỗi ASR (asr_fix.py: lịch->dịch, ron, chữ cái rời)")
     ap.add_argument("--asr-ckpt", help="fine-tuned ChunkFormer .pt loaded onto --asr")
     ap.add_argument("--asr-device", default="cuda:0")
     ap.add_argument("--itn", help="folder of the ITN checkpoint trained by ITN/main.py; runs on ASR text before the mapper")
@@ -499,11 +512,15 @@ def main():
     if a.text:
         asr = None
     elif a.asr_model == "zipformer":
-        from asr_zipformer import ZipformerASR
-        asr = ZipformerASR(a.zipformer, num_threads=a.zipformer_threads, bias=a.bias, hotwords_score=a.hotword_score)
+        from asr.asr_zipformer import ZipformerASR
+        asr = ZipformerASR(a.zipformer, num_threads=a.zipformer_threads, bias=a.bias, hotwords_score=a.hotword_score,
+                           hi=a.hotword_hi, lo=a.hotword_lo, glossary_score=a.glossary_score, beam=a.beam,
+                           hotwords_file=a.hotwords_file, lm=a.lm, lm_scale=a.lm_scale, vad=a.vad)
     else:
         asr = load_asr(a.asr, a.asr_ckpt, a.asr_device)
-    common = common_words(root / "train" / "train.jsonl") if a.bias and (root / "train" / "train.jsonl").exists() else frozenset()
+    common = common_words(root / "train" / "train.jsonl") if (a.bias or a.hotwords_file) and (root / "train" / "train.jsonl").exists() else frozenset()
+    from hotwords.bias import load_global
+    g_alias = load_global(Path(a.hotwords_file).with_suffix(".json")) if a.hotwords_file and Path(a.hotwords_file).with_suffix(".json").exists() else None
     itn = load_itn(a.itn, a.itn_device, a.itn_code) if a.itn else None
     m_args = (a.mapper, a.mapper_lora, a.mapper_gpu_mem, a.seed, 2048, 256, {"enable_thinking": False}, a.eager)
     mapper = None if a.mapper == "none" or gold else RemoteVLLM(a.mapper_device, *m_args) if a.mapper_device else VLLM(*m_args)
@@ -523,10 +540,18 @@ def main():
                     lex = build_lexicon(state, item["context"])
                     pools = app_pools(state)
                 raw = [u["audio_text"] for u in turns] if a.text else run_asr(asr, [root / a.split / u["audio"] for u in turns], lex or None)
+                if g_alias and not lex and not a.text:  # hotword toàn cục: snap theo danh sách cố định, không đọc state.json
+                    snapped = [snap_text(r, [], common, aliases=g_alias) for r in raw]
+                    trace.extend({"snap_text": {"from": r, "changes": ch}} for r, (_, ch) in zip(raw, snapped) if ch)
+                    raw = [t for t, _ in snapped]
                 if lex and not a.text:  # fix near-miss entities left after decoding ("gia lô" -> "Zalo")
                     snapped = [snap_text(r, lex, common) for r in raw]
                     trace.extend({"snap_text": {"from": r, "changes": ch}} for r, (_, ch) in zip(raw, snapped) if ch)
                     raw = [t for t, _ in snapped]
+                if not a.text and not a.no_asr_fix:  # lỗi có hệ thống: "lịch sang tiếng anh" -> "dịch", "xăng rồi chín lăm" -> "ron"
+                    fixed = [fix_text(r) for r in raw]
+                    trace.extend({"asr_fix": {"from": r, "changes": ch}} for r, (_, ch) in zip(raw, fixed) if ch)
+                    raw = [t for t, _ in fixed]
                 # 2. ITN (spoken -> written numbers/dates), then dialect mapper; empty output keeps the previous text
                 itn_out = [itn(r) or r for r in raw] if itn else raw
                 texts = [m or r for r, m in zip(itn_out, mapper.chat([mapper_conv(r) for r in itn_out]))] if mapper else itn_out

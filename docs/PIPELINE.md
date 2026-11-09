@@ -114,10 +114,10 @@ Planner ──plan──► Verifier ──REJECT + lý do──► Planner   (r
 ## 4. ASR: ChunkFormer hoặc Zipformer, kèm search-key biasing
 
 `pipeline.py --asr-model {chunkformer,zipformer}` (mặc định `chunkformer`). Zipformer là
-`hynt/Zipformer-30M-RNNT-6000h` chạy bằng sherpa-onnx (`asr_zipformer.py`): `pip install sherpa-onnx sentencepiece soundfile`.
+`hynt/Zipformer-30M-RNNT-6000h` chạy bằng sherpa-onnx (`asr/asr_zipformer.py`): `pip install sherpa-onnx sentencepiece soundfile`.
 
 `--bias` bật 3 lớp, đều lấy từ khoá từ `<split>_environment/<id>/state.json` (danh bạ, lịch, nhạc, kênh TV, thiết bị...),
-hồ sơ user và một glossary nhỏ (Zalo, SMS, SJC...), xem `bias.py`:
+hồ sơ user và một glossary nhỏ (Zalo, SMS, SJC...), xem `hotwords/bias.py`:
 
 | Lớp | Chỗ chạy | Việc làm |
 |---|---|---|
@@ -128,7 +128,7 @@ hồ sơ user và một glossary nhỏ (Zalo, SMS, SJC...), xem `bias.py`:
 Snap không đụng entity tiếng Việt một âm tiết (Lan, Bống...) vì dễ đè lên từ thường chỉ khác dấu ("đá bóng" → "đá Bống").
 Mọi thay đổi được ghi trong `*.trace.jsonl` (`snap_text`, `snap`).
 
-Đo bằng `compare_asr.py` (300 câu train không chứa số, word accuracy):
+Đo bằng `compare_asr.py` (đã xoá; nay dùng `asr/eval_asr.py`) (300 câu train không chứa số, word accuracy):
 
 | | ChunkFormer | Zipformer | Zipformer + hotwords |
 |---|---|---|---|

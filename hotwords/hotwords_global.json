@@ -1,0 +1,4373 @@
+[
+ {
+  "written": "RON95",
+  "kind": "code",
+  "display": "ron chín lăm",
+  "hotwords": [
+   "ron chín lăm"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "ron chín lăm",
+   "ron chín mươi lăm",
+   "ron chỉ năm",
+   "san john chín lăm",
+   "sài gòn chín năm",
+   "săn loan chín năm"
+  ],
+  "n_occ": 53,
+  "n_err": 45,
+  "err_rate": 0.849,
+  "heard": [
+   [
+    "sài gòn chín năm",
+    3
+   ],
+   [
+    "san john chín lăm",
+    2
+   ],
+   [
+    "săn loan chín năm",
+    2
+   ],
+   [
+    "ron chỉ năm",
+    2
+   ],
+   [
+    "săn đoan chín lăng",
+    1
+   ],
+   [
+    "lon chín lăm",
+    1
+   ],
+   [
+    "con chứ nó không hay",
+    1
+   ],
+   [
+    "san john thìn lăn chọn",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "SJC",
+  "kind": "acronym",
+  "display": "SJC",
+  "hotwords": [
+   "sjc"
+  ],
+  "score": 1.85,
+  "aliases": [
+   "fc",
+   "sc",
+   "sjc",
+   "sjcg"
+  ],
+  "n_occ": 97,
+  "n_err": 41,
+  "err_rate": 0.423,
+  "heard": [
+   [
+    "sjcg",
+    4
+   ],
+   [
+    "fc",
+    3
+   ],
+   [
+    "sc",
+    3
+   ],
+   [
+    "nhất chi sư",
+    1
+   ],
+   [
+    "vâng ft cp ni từng mua",
+    1
+   ],
+   [
+    "vé sc",
+    1
+   ],
+   [
+    "và nhic",
+    1
+   ],
+   [
+    "và st",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "SMS",
+  "kind": "acronym",
+  "display": "SMS",
+  "hotwords": [
+   "sms"
+  ],
+  "score": 1.65,
+  "aliases": [
+   "sm",
+   "sms",
+   "smster"
+  ],
+  "n_occ": 77,
+  "n_err": 25,
+  "err_rate": 0.325,
+  "heard": [
+   [
+    "sm",
+    2
+   ],
+   [
+    "smster",
+    2
+   ],
+   [
+    "nhấn e",
+    1
+   ],
+   [
+    "nhấn st",
+    1
+   ],
+   [
+    "nhà nước xem hết",
+    1
+   ],
+   [
+    "những ed",
+    1
+   ],
+   [
+    "nhấn cái xe buýt",
+    1
+   ],
+   [
+    "nhắc nhở đêm ít cha",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "meeting",
+  "kind": "foreign",
+  "display": "meeting",
+  "hotwords": [
+   "meeting"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "biết tin",
+   "meeting",
+   "mít tinh"
+  ],
+  "n_occ": 17,
+  "n_err": 16,
+  "err_rate": 0.941,
+  "heard": [
+   [
+    "mít tinh",
+    6
+   ],
+   [
+    "biết tin",
+    2
+   ],
+   [
+    "biết tinh trí",
+    1
+   ],
+   [
+    "meting",
+    1
+   ],
+   [
+    "mít tinh reo sò với ai",
+    1
+   ],
+   [
+    "micting",
+    1
+   ],
+   [
+    "mít tiền",
+    1
+   ],
+   [
+    "mít tinh r",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "E5",
+  "kind": "code",
+  "display": "e năm",
+  "hotwords": [
+   "e năm"
+  ],
+  "score": 2.25,
+  "aliases": [
+   "e năm"
+  ],
+  "n_occ": 16,
+  "n_err": 10,
+  "err_rate": 0.625,
+  "heard": [
+   [
+    "hai năm",
+    1
+   ],
+   [
+    "có hai năm",
+    1
+   ],
+   [
+    "độ ế năm",
+    1
+   ],
+   [
+    "lam ve năm",
+    1
+   ],
+   [
+    "y nằm",
+    1
+   ],
+   [
+    "em năm",
+    1
+   ],
+   [
+    "em nam",
+    1
+   ],
+   [
+    "bóng liếc thì đủ đài email",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "SCTV9",
+  "kind": "code",
+  "display": "sctv chín",
+  "hotwords": [
+   "sctv chín"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "sctv chín",
+   "sctv chính"
+  ],
+  "n_occ": 12,
+  "n_err": 9,
+  "err_rate": 0.75,
+  "heard": [
+   [
+    "sctv chính",
+    4
+   ],
+   [
+    "sctv chuyển",
+    1
+   ],
+   [
+    "stv chính",
+    1
+   ],
+   [
+    "sci",
+    1
+   ],
+   [
+    "sct chính",
+    1
+   ],
+   [
+    "sctv chính nhầm thôi",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "CineViệt",
+  "kind": "foreign",
+  "display": "CineViệt",
+  "hotwords": [
+   "cineviệt"
+  ],
+  "score": 2.4,
+  "aliases": [
+   "cineviệt"
+  ],
+  "n_occ": 10,
+  "n_err": 7,
+  "err_rate": 0.7,
+  "heard": [
+   [
+    "xin e việt",
+    1
+   ],
+   [
+    "cine viện",
+    1
+   ],
+   [
+    "sina việt",
+    1
+   ],
+   [
+    "xin việc",
+    1
+   ],
+   [
+    "si mê việc",
+    1
+   ],
+   [
+    "xin ở việt đánh bắt thông báo bắt",
+    1
+   ],
+   [
+    "rạc sina việt",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "task",
+  "kind": "foreign",
+  "display": "task",
+  "hotwords": [
+   "task"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "task"
+  ],
+  "n_occ": 7,
+  "n_err": 7,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "catas",
+    1
+   ],
+   [
+    "dùm chỉ taxit coi",
+    1
+   ],
+   [
+    "tát",
+    1
+   ],
+   [
+    "cá s",
+    1
+   ],
+   [
+    "test",
+    1
+   ],
+   [
+    "taxi",
+    1
+   ],
+   [
+    "hentash for love",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Grace Nakamura",
+  "kind": "name",
+  "display": "Grace Nakamura",
+  "hotwords": [
+   "grace nakamura"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "grace nakamura"
+  ],
+  "n_occ": 8,
+  "n_err": 6,
+  "err_rate": 0.75,
+  "heard": [
+   [
+    "ray nakamura",
+    1
+   ],
+   [
+    "raynakamura",
+    1
+   ],
+   [
+    "grace na",
+    1
+   ],
+   [
+    "grace",
+    1
+   ],
+   [
+    "ray sna camera",
+    1
+   ],
+   [
+    "raynakamora",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "JetXanh",
+  "kind": "foreign",
+  "display": "JetXanh",
+  "hotwords": [
+   "jetxanh"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "jetxanh"
+  ],
+  "n_occ": 6,
+  "n_err": 6,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "giá xanh",
+    1
+   ],
+   [
+    "giáp xanh ai",
+    1
+   ],
+   [
+    "trứng cá xanh",
+    1
+   ],
+   [
+    "rét săn",
+    1
+   ],
+   [
+    "giết xanh",
+    1
+   ],
+   [
+    "trái xanh",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "MinhMart",
+  "kind": "foreign",
+  "display": "MinhMart",
+  "hotwords": [
+   "minhmart"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "minhmart"
+  ],
+  "n_occ": 6,
+  "n_err": 6,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "min mất",
+    1
+   ],
+   [
+    "bên mát",
+    1
+   ],
+   [
+    "minh mát",
+    1
+   ],
+   [
+    "minh mách",
+    1
+   ],
+   [
+    "min mát",
+    1
+   ],
+   [
+    "min mét",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "MinhPoint",
+  "kind": "foreign",
+  "display": "MinhPoint",
+  "hotwords": [
+   "minhpoint"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "minhpoint"
+  ],
+  "n_occ": 6,
+  "n_err": 6,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "minh thôi",
+    1
+   ],
+   [
+    "minh toàn",
+    1
+   ],
+   [
+    "thái minh poi",
+    1
+   ],
+   [
+    "bên point",
+    1
+   ],
+   [
+    "anh khoan",
+    1
+   ],
+   [
+    "minh pôn",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "design",
+  "kind": "foreign",
+  "display": "design",
+  "hotwords": [
+   "design"
+  ],
+  "score": 2.0,
+  "aliases": [
+   "design",
+   "tim thì sai"
+  ],
+  "n_occ": 12,
+  "n_err": 6,
+  "err_rate": 0.5,
+  "heard": [
+   [
+    "tim thì sai",
+    2
+   ],
+   [
+    "de fail",
+    1
+   ],
+   [
+    "em bị sai chóp",
+    1
+   ],
+   [
+    "tin nhắn của desig",
+    1
+   ],
+   [
+    "xem pin đang có đi trai",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "invoice",
+  "kind": "foreign",
+  "display": "invoice",
+  "hotwords": [
+   "invoice"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "invoice"
+  ],
+  "n_occ": 8,
+  "n_err": 6,
+  "err_rate": 0.75,
+  "heard": [
+   [
+    "inboy st",
+    1
+   ],
+   [
+    "in voi",
+    1
+   ],
+   [
+    "infost",
+    1
+   ],
+   [
+    "gòi",
+    1
+   ],
+   [
+    "inboy lo",
+    1
+   ],
+   [
+    "inboy",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "check-in",
+  "kind": "foreign",
+  "display": "check-in",
+  "hotwords": [
+   "check in"
+  ],
+  "score": 2.25,
+  "aliases": [
+   "check in"
+  ],
+  "n_occ": 8,
+  "n_err": 5,
+  "err_rate": 0.625,
+  "heard": [
+   [
+    "checkin",
+    1
+   ],
+   [
+    "check ndm",
+    1
+   ],
+   [
+    "check king sát sản",
+    1
+   ],
+   [
+    "các yên nhiên",
+    1
+   ],
+   [
+    "checkin hong",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "nakamura",
+  "kind": "foreign",
+  "display": "nakamura",
+  "hotwords": [
+   "nakamura"
+  ],
+  "score": 2.25,
+  "aliases": [
+   "nakamura"
+  ],
+  "n_occ": 8,
+  "n_err": 5,
+  "err_rate": 0.625,
+  "heard": [
+   [
+    "raynakamura",
+    1
+   ],
+   [
+    "na",
+    1
+   ],
+   [
+    "",
+    1
+   ],
+   [
+    "ray sna camera",
+    1
+   ],
+   [
+    "raynakamora",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "tanaka",
+  "kind": "foreign",
+  "display": "tanaka",
+  "hotwords": [
+   "tanaka"
+  ],
+  "score": 1.83,
+  "aliases": [
+   "tanaka"
+  ],
+  "n_occ": 12,
+  "n_err": 5,
+  "err_rate": 0.417,
+  "heard": [
+   [
+    "canaca hàng",
+    1
+   ],
+   [
+    "",
+    1
+   ],
+   [
+    "nataka lion gì",
+    1
+   ],
+   [
+    "canaca",
+    1
+   ],
+   [
+    "sonaka",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Anh Bình",
+  "kind": "name",
+  "display": "Anh Bình",
+  "hotwords": [
+   "anh bình"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "anh bình"
+  ],
+  "n_occ": 11,
+  "n_err": 4,
+  "err_rate": 0.364,
+  "heard": [
+   [
+    "ăn mình",
+    1
+   ],
+   [
+    "anh mình",
+    1
+   ],
+   [
+    "anh định",
+    1
+   ],
+   [
+    "in p",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Anh Mười",
+  "kind": "name",
+  "display": "Anh Mười",
+  "hotwords": [
+   "anh mười"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "anh mười"
+  ],
+  "n_occ": 9,
+  "n_err": 4,
+  "err_rate": 0.444,
+  "heard": [
+   [
+    "ăn mười",
+    1
+   ],
+   [
+    "anh người phới bào",
+    1
+   ],
+   [
+    "anh mời rau",
+    1
+   ],
+   [
+    "anh mời em",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Priya Sharma",
+  "kind": "name",
+  "display": "Priya Sharma",
+  "hotwords": [
+   "priya sharma"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "priya sharma"
+  ],
+  "n_occ": 5,
+  "n_err": 4,
+  "err_rate": 0.8,
+  "heard": [
+   [
+    "ria sama",
+    1
+   ],
+   [
+    "riza sama",
+    1
+   ],
+   [
+    "visa sama",
+    1
+   ],
+   [
+    "ria samas",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Team Design",
+  "kind": "name",
+  "display": "Team Design",
+  "hotwords": [
+   "team design"
+  ],
+  "score": 1.89,
+  "aliases": [
+   "team design",
+   "tim thì sai"
+  ],
+  "n_occ": 9,
+  "n_err": 4,
+  "err_rate": 0.444,
+  "heard": [
+   [
+    "tim thì sai",
+    2
+   ],
+   [
+    "em bị sai chóp",
+    1
+   ],
+   [
+    "tim design",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "brightpath",
+  "kind": "foreign",
+  "display": "brightpath",
+  "hotwords": [
+   "brightpath"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "brightpath"
+  ],
+  "n_occ": 4,
+  "n_err": 4,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "agip",
+    1
+   ],
+   [
+    "cạm bia",
+    1
+   ],
+   [
+    "vinfast đã",
+    1
+   ],
+   [
+    "rypad tiềm năng",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "brunch",
+  "kind": "foreign",
+  "display": "brunch",
+  "hotwords": [
+   "brunch"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "brunch"
+  ],
+  "n_occ": 4,
+  "n_err": 4,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "brandna",
+    1
+   ],
+   [
+    "trinh",
+    1
+   ],
+   [
+    "mouri renned",
+    1
+   ],
+   [
+    "wrin",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "cloud",
+  "kind": "foreign",
+  "display": "cloud",
+  "hotwords": [
+   "cloud"
+  ],
+  "score": 2.33,
+  "aliases": [
+   "cloud"
+  ],
+  "n_occ": 6,
+  "n_err": 4,
+  "err_rate": 0.667,
+  "heard": [
+   [
+    "cặp bloggle",
+    1
+   ],
+   [
+    "de fail",
+    1
+   ],
+   [
+    "clu",
+    1
+   ],
+   [
+    "lao",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "crestview",
+  "kind": "foreign",
+  "display": "crestview",
+  "hotwords": [
+   "crestview"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "crestview"
+  ],
+  "n_occ": 4,
+  "n_err": 4,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "zalo resville",
+    1
+   ],
+   [
+    "rách view",
+    1
+   ],
+   [
+    "resville",
+    1
+   ],
+   [
+    "căng rách bill",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "euro",
+  "kind": "foreign",
+  "display": "euro",
+  "hotwords": [
+   "euro"
+  ],
+  "score": 2.0,
+  "aliases": [
+   "euro"
+  ],
+  "n_occ": 8,
+  "n_err": 4,
+  "err_rate": 0.5,
+  "heard": [
+   [
+    "nguyên so erro lấy",
+    1
+   ],
+   [
+    "alo",
+    1
+   ],
+   [
+    "aro",
+    1
+   ],
+   [
+    "ơ rô",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "grace",
+  "kind": "foreign",
+  "display": "grace",
+  "hotwords": [
+   "grace"
+  ],
+  "score": 1.89,
+  "aliases": [
+   "grace"
+  ],
+  "n_occ": 9,
+  "n_err": 4,
+  "err_rate": 0.444,
+  "heard": [
+   [
+    "ray",
+    1
+   ],
+   [
+    "raynakamura",
+    1
+   ],
+   [
+    "ray sna camera",
+    1
+   ],
+   [
+    "raynakamora",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "hale",
+  "kind": "foreign",
+  "display": "hale",
+  "hotwords": [
+   "hale"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "hale"
+  ],
+  "n_occ": 4,
+  "n_err": 4,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "piro heo",
+    1
+   ],
+   [
+    "ma co",
+    1
+   ],
+   [
+    "how",
+    1
+   ],
+   [
+    "",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "priya",
+  "kind": "foreign",
+  "display": "priya",
+  "hotwords": [
+   "priya"
+  ],
+  "score": 2.14,
+  "aliases": [
+   "priya"
+  ],
+  "n_occ": 7,
+  "n_err": 4,
+  "err_rate": 0.571,
+  "heard": [
+   [
+    "ria sama",
+    1
+   ],
+   [
+    "riza sama",
+    1
+   ],
+   [
+    "visa sama",
+    1
+   ],
+   [
+    "ria samas",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "python",
+  "kind": "foreign",
+  "display": "python",
+  "hotwords": [
+   "python"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "python"
+  ],
+  "n_occ": 4,
+  "n_err": 4,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "tài khoản pith cơ",
+    1
+   ],
+   [
+    "peter",
+    1
+   ],
+   [
+    "khóa pithon",
+    1
+   ],
+   [
+    "họp i ton",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "sharma",
+  "kind": "foreign",
+  "display": "sharma",
+  "hotwords": [
+   "sharma"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "sharma"
+  ],
+  "n_occ": 5,
+  "n_err": 4,
+  "err_rate": 0.8,
+  "heard": [
+   [
+    "ria sama",
+    1
+   ],
+   [
+    "riza sama",
+    1
+   ],
+   [
+    "visa sama",
+    1
+   ],
+   [
+    "ria samas",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Amber Interiors",
+  "kind": "name",
+  "display": "Amber Interiors",
+  "hotwords": [
+   "amber interiors"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "amber interiors"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "albert interial sna",
+    1
+   ],
+   [
+    "albert interial khỏi",
+    1
+   ],
+   [
+    "em b interial",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Bé Bống",
+  "kind": "name",
+  "display": "Bé Bống",
+  "hotwords": [
+   "bé bống"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "bé bống"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "bé bốn",
+    1
+   ],
+   [
+    "bé phóng",
+    1
+   ],
+   [
+    "bé bấm",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Cloud Pro",
+  "kind": "name",
+  "display": "Cloud Pro",
+  "hotwords": [
+   "cloud pro"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "cloud pro"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "cặp bloggle",
+    1
+   ],
+   [
+    "cloud rượu",
+    1
+   ],
+   [
+    "cloud",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Crestview Hotels",
+  "kind": "name",
+  "display": "Crestview Hotels",
+  "hotwords": [
+   "crestview hotels"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "crestview hotels"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "zalo resville hotels",
+    1
+   ],
+   [
+    "rách view hotels",
+    1
+   ],
+   [
+    "căng rách bill hotels",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "James Wong",
+  "kind": "name",
+  "display": "James Wong",
+  "hotwords": [
+   "james wong"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "james wong"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "james won",
+    1
+   ],
+   [
+    "cham wall",
+    1
+   ],
+   [
+    "chen won và khóa",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Lemon Tree",
+  "kind": "name",
+  "display": "Lemon Tree",
+  "hotwords": [
+   "lemon tree"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "lemon tree"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "lên mình có",
+    1
+   ],
+   [
+    "lemon ri",
+    1
+   ],
+   [
+    "len truy",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Marcus Hale",
+  "kind": "name",
+  "display": "Marcus Hale",
+  "hotwords": [
+   "marcus hale"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "marcus hale"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "ma co",
+    1
+   ],
+   [
+    "marcus how",
+    1
+   ],
+   [
+    "marcus",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Nathan Reed",
+  "kind": "name",
+  "display": "Nathan Reed",
+  "hotwords": [
+   "nathan reed"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "nathan reed"
+  ],
+  "n_occ": 4,
+  "n_err": 3,
+  "err_rate": 0.75,
+  "heard": [
+   [
+    "nathan rex",
+    1
+   ],
+   [
+    "nathan read",
+    1
+   ],
+   [
+    "nathan rít",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Nexora Labs",
+  "kind": "name",
+  "display": "Nexora Labs",
+  "hotwords": [
+   "nexora labs"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "nexora labs"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "misa last không",
+    1
+   ],
+   [
+    "nexora",
+    1
+   ],
+   [
+    "netsura las",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Olivia Brown",
+  "kind": "name",
+  "display": "Olivia Brown",
+  "hotwords": [
+   "olivia brown"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "olivia brown"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "olivia browning",
+    1
+   ],
+   [
+    "olivia brow",
+    1
+   ],
+   [
+    "olivia bao",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Peter Hansen",
+  "kind": "name",
+  "display": "Peter Hansen",
+  "hotwords": [
+   "peter hansen"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "peter hansen"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "peter hang sen",
+    1
+   ],
+   [
+    "peter harum trần",
+    1
+   ],
+   [
+    "peter han",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Sarah Kim",
+  "kind": "name",
+  "display": "Sarah Kim",
+  "hotwords": [
+   "sarah kim"
+  ],
+  "score": 2.2,
+  "aliases": [
+   "sarah kim"
+  ],
+  "n_occ": 5,
+  "n_err": 3,
+  "err_rate": 0.6,
+  "heard": [
+   [
+    "sara kim",
+    1
+   ],
+   [
+    "zalo kim",
+    1
+   ],
+   [
+    "sarah kia",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "TalkAI",
+  "kind": "foreign",
+  "display": "TalkAI",
+  "hotwords": [
+   "talkai"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "talkai"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "thấp ai",
+    1
+   ],
+   [
+    "có top ai",
+    1
+   ],
+   [
+    "thoát ai",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "amber",
+  "kind": "foreign",
+  "display": "amber",
+  "hotwords": [
+   "amber"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "amber"
+  ],
+  "n_occ": 4,
+  "n_err": 3,
+  "err_rate": 0.75,
+  "heard": [
+   [
+    "albert interial sna",
+    1
+   ],
+   [
+    "albert interial khỏi",
+    1
+   ],
+   [
+    "em b interial",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "bill",
+  "kind": "foreign",
+  "display": "bill",
+  "hotwords": [
+   "bill"
+  ],
+  "score": 2.2,
+  "aliases": [
+   "bill"
+  ],
+  "n_occ": 5,
+  "n_err": 3,
+  "err_rate": 0.6,
+  "heard": [
+   [
+    "dân hết",
+    1
+   ],
+   [
+    "bưu",
+    1
+   ],
+   [
+    "bu chơi",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "brown",
+  "kind": "foreign",
+  "display": "brown",
+  "hotwords": [
+   "brown"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "brown"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "browning",
+    1
+   ],
+   [
+    "brow",
+    1
+   ],
+   [
+    "bao",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "check-out",
+  "kind": "foreign",
+  "display": "check-out",
+  "hotwords": [
+   "check out"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "check out"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "sẽ cao",
+    1
+   ],
+   [
+    "hết chiếc áo sơ ông từ rubu của a có liệp",
+    1
+   ],
+   [
+    "trách ao",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "confirm",
+  "kind": "foreign",
+  "display": "confirm",
+  "hotwords": [
+   "confirm"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "confirm"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "cầm phân",
+    1
+   ],
+   [
+    "comform",
+    1
+   ],
+   [
+    "vượt hình phone đợi",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "diesel",
+  "kind": "foreign",
+  "display": "diesel",
+  "hotwords": [
+   "diesel"
+  ],
+  "score": 2.2,
+  "aliases": [
+   "diesel"
+  ],
+  "n_occ": 5,
+  "n_err": 3,
+  "err_rate": 0.6,
+  "heard": [
+   [
+    "đi gen",
+    1
+   ],
+   [
+    "điêu rén chờ báo chí",
+    1
+   ],
+   [
+    "đi zalo",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "foods",
+  "kind": "foreign",
+  "display": "foods",
+  "hotwords": [
+   "foods"
+  ],
+  "score": 1.86,
+  "aliases": [
+   "foods"
+  ],
+  "n_occ": 7,
+  "n_err": 3,
+  "err_rate": 0.429,
+  "heard": [
+   [
+    "rinal food",
+    1
+   ],
+   [
+    "food",
+    1
+   ],
+   [
+    "sunri fours",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "hansen",
+  "kind": "foreign",
+  "display": "hansen",
+  "hotwords": [
+   "hansen"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "hansen"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "hang sen",
+    1
+   ],
+   [
+    "harum trần",
+    1
+   ],
+   [
+    "han",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "interiors",
+  "kind": "foreign",
+  "display": "interiors",
+  "hotwords": [
+   "interiors"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "interiors"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "albert interial sna",
+    1
+   ],
+   [
+    "albert interial khỏi",
+    1
+   ],
+   [
+    "em b interial",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "kevin",
+  "kind": "foreign",
+  "display": "kevin",
+  "hotwords": [
+   "kevin"
+  ],
+  "score": 2.2,
+  "aliases": [
+   "kevin"
+  ],
+  "n_occ": 5,
+  "n_err": 3,
+  "err_rate": 0.6,
+  "heard": [
+   [
+    "giao lô ken bích quát đến",
+    1
+   ],
+   [
+    "để con cái vinfast",
+    1
+   ],
+   [
+    "ca vinta",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "labs",
+  "kind": "foreign",
+  "display": "labs",
+  "hotwords": [
+   "labs"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "labs"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "misa last không",
+    1
+   ],
+   [
+    "",
+    1
+   ],
+   [
+    "netsura las",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "lounge",
+  "kind": "foreign",
+  "display": "lounge",
+  "hotwords": [
+   "lounge"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "lounge"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "logic lou vơ",
+    1
+   ],
+   [
+    "lo việc",
+    1
+   ],
+   [
+    "",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "nexora",
+  "kind": "foreign",
+  "display": "nexora",
+  "hotwords": [
+   "nexora"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "nexora"
+  ],
+  "n_occ": 4,
+  "n_err": 3,
+  "err_rate": 0.75,
+  "heard": [
+   [
+    "misa last không",
+    1
+   ],
+   [
+    "netsura las",
+    1
+   ],
+   [
+    "",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "pro",
+  "kind": "foreign",
+  "display": "pro",
+  "hotwords": [
+   "pro"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "pro"
+  ],
+  "n_occ": 4,
+  "n_err": 3,
+  "err_rate": 0.75,
+  "heard": [
+   [
+    "cặp bloggle",
+    1
+   ],
+   [
+    "rượu",
+    1
+   ],
+   [
+    "",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "reed",
+  "kind": "foreign",
+  "display": "reed",
+  "hotwords": [
+   "reed"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "reed"
+  ],
+  "n_occ": 4,
+  "n_err": 3,
+  "err_rate": 0.75,
+  "heard": [
+   [
+    "rex",
+    1
+   ],
+   [
+    "read",
+    1
+   ],
+   [
+    "rít",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "sapiens",
+  "kind": "foreign",
+  "display": "sapiens",
+  "hotwords": [
+   "sapiens"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "sapiens"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "selfie",
+    1
+   ],
+   [
+    "cửa surpent",
+    1
+   ],
+   [
+    "share bên",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "sport",
+  "kind": "foreign",
+  "display": "sport",
+  "hotwords": [
+   "sport"
+  ],
+  "score": 1.6,
+  "aliases": [
+   "sport"
+  ],
+  "n_occ": 10,
+  "n_err": 3,
+  "err_rate": 0.3,
+  "heard": [
+   [
+    "sluster",
+    1
+   ],
+   [
+    "porschem thôi",
+    1
+   ],
+   [
+    "cộng xúp bọt",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "sprint",
+  "kind": "foreign",
+  "display": "sprint",
+  "hotwords": [
+   "sprint"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "sprint"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "cái chỗ sprin",
+    1
+   ],
+   [
+    "spring",
+    1
+   ],
+   [
+    "và minh spring",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "sunrise",
+  "kind": "foreign",
+  "display": "sunrise",
+  "hotwords": [
+   "sunrise"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "sunrise"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "fred",
+    1
+   ],
+   [
+    "sunri fours",
+    1
+   ],
+   [
+    "sunric",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "vendor",
+  "kind": "foreign",
+  "display": "vendor",
+  "hotwords": [
+   "vendor"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "vendor"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "vander",
+    1
+   ],
+   [
+    "máy bên đây",
+    1
+   ],
+   [
+    "ban the",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "wong",
+  "kind": "foreign",
+  "display": "wong",
+  "hotwords": [
+   "wong"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "wong"
+  ],
+  "n_occ": 3,
+  "n_err": 3,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "won",
+    1
+   ],
+   [
+    "cham wall",
+    1
+   ],
+   [
+    "chen won và khóa",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Đà Lạt",
+  "kind": "name",
+  "display": "Đà Lạt",
+  "hotwords": [
+   "đà lạt"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "đà lạt"
+  ],
+  "n_occ": 5,
+  "n_err": 3,
+  "err_rate": 0.6,
+  "heard": [
+   [
+    "lành lẹt",
+    1
+   ],
+   [
+    "này lại kiếm",
+    1
+   ],
+   [
+    "đã làm",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Bình Tây",
+  "kind": "name",
+  "display": "Bình Tây",
+  "hotwords": [
+   "bình tây"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "bình tây",
+   "miền tây"
+  ],
+  "n_occ": 4,
+  "n_err": 2,
+  "err_rate": 0.5,
+  "heard": [
+   [
+    "miền tây",
+    2
+   ]
+  ]
+ },
+ {
+  "written": "Bạch Đằng",
+  "kind": "name",
+  "display": "Bạch Đằng",
+  "hotwords": [
+   "bạch đằng"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "bạch đằng"
+  ],
+  "n_occ": 3,
+  "n_err": 2,
+  "err_rate": 0.667,
+  "heard": [
+   [
+    "mặt đằng",
+    1
+   ],
+   [
+    "bạch đàn",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Bến Thành",
+  "kind": "name",
+  "display": "Bến Thành",
+  "hotwords": [
+   "bến thành"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "bến thành"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "bán thành",
+    1
+   ],
+   [
+    "bến thanh",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Cái Răng",
+  "kind": "name",
+  "display": "Cái Răng",
+  "hotwords": [
+   "cái răng"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "cái răng"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "chạm kết anh",
+    1
+   ],
+   [
+    "cá ăn",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Hồ Gươm",
+  "kind": "name",
+  "display": "Hồ Gươm",
+  "hotwords": [
+   "hồ gươm"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "hồ gươm"
+  ],
+  "n_occ": 3,
+  "n_err": 2,
+  "err_rate": 0.667,
+  "heard": [
+   [
+    "màu gơm",
+    1
+   ],
+   [
+    "checkin hong gươm",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Julian Ward",
+  "kind": "name",
+  "display": "Julian Ward",
+  "hotwords": [
+   "julian ward"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "julian ward"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "chủ hiền word",
+    1
+   ],
+   [
+    "thể nào sẽ thấy chủ yếu gót",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "KTX",
+  "kind": "acronym",
+  "display": "KTX",
+  "hotwords": [
+   "ktx"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "ktx"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "thử ký đốt cháo",
+    1
+   ],
+   [
+    "ký túc xá",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Kevin Walsh",
+  "kind": "name",
+  "display": "Kevin Walsh",
+  "hotwords": [
+   "kevin walsh"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "kevin walsh"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "giao lô ken bích quát đến",
+    1
+   ],
+   [
+    "kevin",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Không Quảng Cáo",
+  "kind": "name",
+  "display": "Không Quảng Cáo",
+  "hotwords": [
+   "không quảng cáo"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "không quảng cáo"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "podca",
+    1
+   ],
+   [
+    "xong quảng cáo",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Kuala Lumpur",
+  "kind": "name",
+  "display": "Kuala Lumpur",
+  "hotwords": [
+   "kuala lumpur"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "kuala lumpur"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "ko lau pơ",
+    1
+   ],
+   [
+    "kuala lum vo",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Laura Costa",
+  "kind": "name",
+  "display": "Laura Costa",
+  "hotwords": [
+   "laura costa"
+  ],
+  "score": 1.8,
+  "aliases": [
+   "laura costa"
+  ],
+  "n_occ": 5,
+  "n_err": 2,
+  "err_rate": 0.4,
+  "heard": [
+   [
+    "laura scott",
+    1
+   ],
+   [
+    "laura co",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Nina Kowalski",
+  "kind": "name",
+  "display": "Nina Kowalski",
+  "hotwords": [
+   "nina kowalski"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "nina kowalski"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "mina kobaty",
+    1
+   ],
+   [
+    "nina kobashi ra",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "OrbitCloud",
+  "kind": "foreign",
+  "display": "OrbitCloud",
+  "hotwords": [
+   "orbitcloud"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "orbitcloud"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "obit cloud plus",
+    1
+   ],
+   [
+    "",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Pinnacle Design",
+  "kind": "name",
+  "display": "Pinnacle Design",
+  "hotwords": [
+   "pinnacle design"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "pinnacle design"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "tin nhắn của desig",
+    1
+   ],
+   [
+    "xem pin đang có đi trai",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "RV221",
+  "kind": "code",
+  "display": "rv hai hai một",
+  "hotwords": [
+   "rv hai hai một"
+  ],
+  "score": 2.33,
+  "aliases": [
+   "rv hai hai một",
+   "rv hai trăm hai mươi mốt"
+  ],
+  "n_occ": 3,
+  "n_err": 2,
+  "err_rate": 0.667,
+  "heard": [
+   [
+    "rv hai một",
+    2
+   ]
+  ]
+ },
+ {
+  "written": "RV236",
+  "kind": "code",
+  "display": "rv hai ba sáu",
+  "hotwords": [
+   "rv hai ba sáu"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "rv hai ba sáu",
+   "rv hai trăm ba mươi sáu"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "rv hai mã số",
+    1
+   ],
+   [
+    "rv hai ba sáu mươi",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Riverside Coworking",
+  "kind": "name",
+  "display": "Riverside Coworking",
+  "hotwords": [
+   "riverside coworking"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "riverside com",
+   "riverside coworking"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "riverside com",
+    2
+   ]
+  ]
+ },
+ {
+  "written": "Ryan Cooper",
+  "kind": "name",
+  "display": "Ryan Cooper",
+  "hotwords": [
+   "ryan cooper"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "ryan cooper"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "brian cooper",
+    1
+   ],
+   [
+    "rang khắp với",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Rồng Miles",
+  "kind": "name",
+  "display": "Rồng Miles",
+  "hotwords": [
+   "rồng miles"
+  ],
+  "score": 2.33,
+  "aliases": [
+   "rồng miles"
+  ],
+  "n_occ": 3,
+  "n_err": 2,
+  "err_rate": 0.667,
+  "heard": [
+   [
+    "rồng mai",
+    1
+   ],
+   [
+    "phòng mice",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Sếp Trân",
+  "kind": "name",
+  "display": "Sếp Trân",
+  "hotwords": [
+   "sếp trân"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sếp trân"
+  ],
+  "n_occ": 6,
+  "n_err": 2,
+  "err_rate": 0.333,
+  "heard": [
+   [
+    "sếp cho anh",
+    1
+   ],
+   [
+    "sếp cho em",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "The Lemon Tree Café",
+  "kind": "name",
+  "display": "The Lemon Tree Café",
+  "hotwords": [
+   "the lemon tree café"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "the lemon tree café"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "lên mình có café",
+    1
+   ],
+   [
+    "the len truy café",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Tom Baker",
+  "kind": "name",
+  "display": "Tom Baker",
+  "hotwords": [
+   "tom baker"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "tom baker"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "tom pecker",
+    1
+   ],
+   [
+    "tom backer",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "VOV",
+  "kind": "acronym",
+  "display": "VOV",
+  "hotwords": [
+   "vov"
+  ],
+  "score": 1.67,
+  "aliases": [
+   "vov"
+  ],
+  "n_occ": 6,
+  "n_err": 2,
+  "err_rate": 0.333,
+  "heard": [
+   [
+    "v ov",
+    1
+   ],
+   [
+    "vo",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "VivuFood",
+  "kind": "foreign",
+  "display": "VivuFood",
+  "hotwords": [
+   "vivufood"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "vivufood"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "vivor food",
+    1
+   ],
+   [
+    "view food",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "Westgate Mall",
+  "kind": "name",
+  "display": "Westgate Mall",
+  "hotwords": [
+   "westgate mall"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "westgate mall"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "là west chay môn",
+    1
+   ],
+   [
+    "tớ westgamo",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "alert",
+  "kind": "foreign",
+  "display": "alert",
+  "hotwords": [
+   "alert"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "alert"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "alex",
+    1
+   ],
+   [
+    "ăn lá",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "amsterdam",
+  "kind": "foreign",
+  "display": "amsterdam",
+  "hotwords": [
+   "amsterdam"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "amsterdam"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "em sterdam",
+    1
+   ],
+   [
+    "đưa anh sterdam",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "baker",
+  "kind": "foreign",
+  "display": "baker",
+  "hotwords": [
+   "baker"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "baker"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "pecker",
+    1
+   ],
+   [
+    "backer",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "bank",
+  "kind": "foreign",
+  "display": "bank",
+  "hotwords": [
+   "bank"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "bank"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "checkin",
+    1
+   ],
+   [
+    "ăn lễ",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "bar",
+  "kind": "foreign",
+  "display": "bar",
+  "hotwords": [
+   "bar"
+  ],
+  "score": 2.33,
+  "aliases": [
+   "bar"
+  ],
+  "n_occ": 3,
+  "n_err": 2,
+  "err_rate": 0.667,
+  "heard": [
+   [
+    "sky ligh bric top barary",
+    1
+   ],
+   [
+    "pare",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "bluebird",
+  "kind": "foreign",
+  "display": "bluebird",
+  "hotwords": [
+   "bluebird"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "bluebird"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "blue",
+    2
+   ]
+  ]
+ },
+ {
+  "written": "cardiol",
+  "kind": "foreign",
+  "display": "cardiol",
+  "hotwords": [
+   "cardiol"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "cardiol"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "cadion",
+    1
+   ],
+   [
+    "điều ca dion",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "concert",
+  "kind": "foreign",
+  "display": "concert",
+  "hotwords": [
+   "concert"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "concert"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "con xuất đi",
+    1
+   ],
+   [
+    "thì bé còn soạn biết",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "costa",
+  "kind": "foreign",
+  "display": "costa",
+  "hotwords": [
+   "costa"
+  ],
+  "score": 1.8,
+  "aliases": [
+   "costa"
+  ],
+  "n_occ": 5,
+  "n_err": 2,
+  "err_rate": 0.4,
+  "heard": [
+   [
+    "scott",
+    1
+   ],
+   [
+    "co",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "coworking",
+  "kind": "foreign",
+  "display": "coworking",
+  "hotwords": [
+   "coworking"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "com",
+   "coworking"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "com",
+    2
+   ]
+  ]
+ },
+ {
+  "written": "croissant",
+  "kind": "foreign",
+  "display": "croissant",
+  "hotwords": [
+   "croissant"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "croissant"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "có so",
+    1
+   ],
+   [
+    "crush san",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "excel",
+  "kind": "foreign",
+  "display": "excel",
+  "hotwords": [
+   "excel"
+  ],
+  "score": 1.8,
+  "aliases": [
+   "excel"
+  ],
+  "n_occ": 5,
+  "n_err": 2,
+  "err_rate": 0.4,
+  "heard": [
+   [
+    "khoái sau năm tháng",
+    1
+   ],
+   [
+    "khoác xe",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "fujimoto",
+  "kind": "foreign",
+  "display": "fujimoto",
+  "hotwords": [
+   "fujimoto"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "fujimoto"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "futu",
+    1
+   ],
+   [
+    "fu",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "harbor",
+  "kind": "foreign",
+  "display": "harbor",
+  "hotwords": [
+   "harbor"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "harbor"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "hboy bugners",
+    1
+   ],
+   [
+    "harvard",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "intern",
+  "kind": "foreign",
+  "display": "intern",
+  "hotwords": [
+   "intern"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "intern"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "imson",
+    1
+   ],
+   [
+    "zalo inter",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "james",
+  "kind": "foreign",
+  "display": "james",
+  "hotwords": [
+   "james"
+  ],
+  "score": 2.33,
+  "aliases": [
+   "james"
+  ],
+  "n_occ": 3,
+  "n_err": 2,
+  "err_rate": 0.667,
+  "heard": [
+   [
+    "cham wall",
+    1
+   ],
+   [
+    "chen won và khóa",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "julian",
+  "kind": "foreign",
+  "display": "julian",
+  "hotwords": [
+   "julian"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "julian"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "chủ hiền word",
+    1
+   ],
+   [
+    "thể nào sẽ thấy chủ yếu gót",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "kowalski",
+  "kind": "foreign",
+  "display": "kowalski",
+  "hotwords": [
+   "kowalski"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "kowalski"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "mina kobaty",
+    1
+   ],
+   [
+    "kobashi ra",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "lemon",
+  "kind": "foreign",
+  "display": "lemon",
+  "hotwords": [
+   "lemon"
+  ],
+  "score": 2.33,
+  "aliases": [
+   "lemon"
+  ],
+  "n_occ": 3,
+  "n_err": 2,
+  "err_rate": 0.667,
+  "heard": [
+   [
+    "lên mình có",
+    1
+   ],
+   [
+    "len truy",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "lotus",
+  "kind": "foreign",
+  "display": "lotus",
+  "hotwords": [
+   "lotus"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "lotus"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "lotis",
+    1
+   ],
+   [
+    "ego the lotte sôi",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "lumpur",
+  "kind": "foreign",
+  "display": "lumpur",
+  "hotwords": [
+   "lumpur"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "lumpur"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "ko lau pơ",
+    1
+   ],
+   [
+    "lum vo",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "mall",
+  "kind": "foreign",
+  "display": "mall",
+  "hotwords": [
+   "mall"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "mall"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "là west chay môn",
+    1
+   ],
+   [
+    "tớ westgamo",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "mockup",
+  "kind": "foreign",
+  "display": "mockup",
+  "hotwords": [
+   "mockup"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "mockup"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "macop hạng",
+    1
+   ],
+   [
+    "mốc cấp chiếc",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "mrs",
+  "kind": "foreign",
+  "display": "mrs",
+  "hotwords": [
+   "mrs"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "mrs"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "michatane",
+    1
+   ],
+   [
+    "miss",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "northwind",
+  "kind": "foreign",
+  "display": "northwind",
+  "hotwords": [
+   "northwind"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "northwind"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "notun nhà",
+    1
+   ],
+   [
+    "nod win",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "partners",
+  "kind": "foreign",
+  "display": "partners",
+  "hotwords": [
+   "partners"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "partners"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "hboy bugners",
+    1
+   ],
+   [
+    "jennis partner",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "pinnacle",
+  "kind": "foreign",
+  "display": "pinnacle",
+  "hotwords": [
+   "pinnacle"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "pinnacle"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "tin nhắn của desig",
+    1
+   ],
+   [
+    "xem pin đang có đi trai",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "plus",
+  "kind": "foreign",
+  "display": "plus",
+  "hotwords": [
+   "plus"
+  ],
+  "score": 1.8,
+  "aliases": [
+   "plus"
+  ],
+  "n_occ": 5,
+  "n_err": 2,
+  "err_rate": 0.4,
+  "heard": [
+   [
+    "plast",
+    1
+   ],
+   [
+    "love y",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "release",
+  "kind": "foreign",
+  "display": "release",
+  "hotwords": [
+   "release"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "release"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "relinate",
+    1
+   ],
+   [
+    "hợp rồi lia nó",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "rooftop",
+  "kind": "foreign",
+  "display": "rooftop",
+  "hotwords": [
+   "rooftop"
+  ],
+  "score": 2.0,
+  "aliases": [
+   "rooftop"
+  ],
+  "n_occ": 4,
+  "n_err": 2,
+  "err_rate": 0.5,
+  "heard": [
+   [
+    "sky ligh bric top barary",
+    1
+   ],
+   [
+    "xin sếp rất shop",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "skyline",
+  "kind": "foreign",
+  "display": "skyline",
+  "hotwords": [
+   "skyline"
+  ],
+  "score": 1.8,
+  "aliases": [
+   "skyline"
+  ],
+  "n_occ": 5,
+  "n_err": 2,
+  "err_rate": 0.4,
+  "heard": [
+   [
+    "sky ligh bric top barary",
+    1
+   ],
+   [
+    "sky",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "suites",
+  "kind": "foreign",
+  "display": "suites",
+  "hotwords": [
+   "suites"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "suites"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "viger ban truy",
+    1
+   ],
+   [
+    "street",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "taipei",
+  "kind": "foreign",
+  "display": "taipei",
+  "hotwords": [
+   "taipei"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "taipei"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "thai",
+    1
+   ],
+   [
+    "thay bay",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "target",
+  "kind": "foreign",
+  "display": "target",
+  "hotwords": [
+   "target"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "target"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "ta gác",
+    1
+   ],
+   [
+    "ừ tao dậy",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "walsh",
+  "kind": "foreign",
+  "display": "walsh",
+  "hotwords": [
+   "walsh"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "walsh"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "giao lô ken bích quát đến",
+    1
+   ],
+   [
+    "",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "ward",
+  "kind": "foreign",
+  "display": "ward",
+  "hotwords": [
+   "ward"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "ward"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "chủ hiền word",
+    1
+   ],
+   [
+    "thể nào sẽ thấy chủ yếu gót",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "westgate",
+  "kind": "foreign",
+  "display": "westgate",
+  "hotwords": [
+   "westgate"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "westgate"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "là west chay môn",
+    1
+   ],
+   [
+    "tớ westgamo",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "xemflix",
+  "kind": "foreign",
+  "display": "xemflix",
+  "hotwords": [
+   "xemflix"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "xemflix"
+  ],
+  "n_occ": 2,
+  "n_err": 2,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "netflix chừa",
+    1
+   ],
+   [
+    "xem clip",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "HTV1",
+  "kind": "code",
+  "display": "htv một",
+  "hotwords": [
+   "htv một"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "htv một"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "HTV2",
+  "kind": "code",
+  "display": "htv hai",
+  "hotwords": [
+   "htv hai"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "htv hai"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "HTV3",
+  "kind": "code",
+  "display": "htv ba",
+  "hotwords": [
+   "htv ba"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "htv ba"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "HTV4",
+  "kind": "code",
+  "display": "htv bốn",
+  "hotwords": [
+   "htv bốn"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "htv bốn"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "HTV5",
+  "kind": "code",
+  "display": "htv năm",
+  "hotwords": [
+   "htv năm"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "htv năm"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "HTV6",
+  "kind": "code",
+  "display": "htv sáu",
+  "hotwords": [
+   "htv sáu"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "htv sáu"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "HTV8",
+  "kind": "code",
+  "display": "htv tám",
+  "hotwords": [
+   "htv tám"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "htv tám"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "HTV9",
+  "kind": "code",
+  "display": "htv chín",
+  "hotwords": [
+   "htv chín"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "htv chín"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "RON92",
+  "kind": "code",
+  "display": "ron chín mươi hai",
+  "hotwords": [
+   "ron chín mươi hai"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "ron chín hai",
+   "ron chín mươi hai"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "RON97",
+  "kind": "code",
+  "display": "ron chín mươi bảy",
+  "hotwords": [
+   "ron chín mươi bảy"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "ron chín bảy",
+   "ron chín mươi bảy"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV1",
+  "kind": "code",
+  "display": "sctv một",
+  "hotwords": [
+   "sctv một"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv một"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV10",
+  "kind": "code",
+  "display": "sctv mười",
+  "hotwords": [
+   "sctv mười"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv mười"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV11",
+  "kind": "code",
+  "display": "sctv mười một",
+  "hotwords": [
+   "sctv mười một"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv mười một"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV12",
+  "kind": "code",
+  "display": "sctv mười hai",
+  "hotwords": [
+   "sctv mười hai"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv mười hai"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV13",
+  "kind": "code",
+  "display": "sctv mười ba",
+  "hotwords": [
+   "sctv mười ba"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv mười ba"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV14",
+  "kind": "code",
+  "display": "sctv mười bốn",
+  "hotwords": [
+   "sctv mười bốn"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv mười bốn"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV15",
+  "kind": "code",
+  "display": "sctv mười lăm",
+  "hotwords": [
+   "sctv mười lăm"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv mười lăm"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV16",
+  "kind": "code",
+  "display": "sctv mười sáu",
+  "hotwords": [
+   "sctv mười sáu"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv mười sáu"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV17",
+  "kind": "code",
+  "display": "sctv mười bảy",
+  "hotwords": [
+   "sctv mười bảy"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv mười bảy"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV18",
+  "kind": "code",
+  "display": "sctv mười tám",
+  "hotwords": [
+   "sctv mười tám"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv mười tám"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV19",
+  "kind": "code",
+  "display": "sctv mười chín",
+  "hotwords": [
+   "sctv mười chín"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv mười chín"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV2",
+  "kind": "code",
+  "display": "sctv hai",
+  "hotwords": [
+   "sctv hai"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv hai"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV20",
+  "kind": "code",
+  "display": "sctv hai mươi",
+  "hotwords": [
+   "sctv hai mươi"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv hai mươi"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV3",
+  "kind": "code",
+  "display": "sctv ba",
+  "hotwords": [
+   "sctv ba"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv ba"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV4",
+  "kind": "code",
+  "display": "sctv bốn",
+  "hotwords": [
+   "sctv bốn"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv bốn"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV5",
+  "kind": "code",
+  "display": "sctv năm",
+  "hotwords": [
+   "sctv năm"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv năm"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV6",
+  "kind": "code",
+  "display": "sctv sáu",
+  "hotwords": [
+   "sctv sáu"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv sáu"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV7",
+  "kind": "code",
+  "display": "sctv bảy",
+  "hotwords": [
+   "sctv bảy"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv bảy"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "SCTV8",
+  "kind": "code",
+  "display": "sctv tám",
+  "hotwords": [
+   "sctv tám"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "sctv tám"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "VOV1",
+  "kind": "code",
+  "display": "vov một",
+  "hotwords": [
+   "vov một"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "vov một"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "VOV2",
+  "kind": "code",
+  "display": "vov hai",
+  "hotwords": [
+   "vov hai"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "vov hai"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "VTV2",
+  "kind": "code",
+  "display": "vtv hai",
+  "hotwords": [
+   "vtv hai"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "vtv hai"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "VTV4",
+  "kind": "code",
+  "display": "vtv bốn",
+  "hotwords": [
+   "vtv bốn"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "vtv bốn"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "VTV5",
+  "kind": "code",
+  "display": "vtv năm",
+  "hotwords": [
+   "vtv năm"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "vtv năm"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "VTV7",
+  "kind": "code",
+  "display": "vtv bảy",
+  "hotwords": [
+   "vtv bảy"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "vtv bảy"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "VTV8",
+  "kind": "code",
+  "display": "vtv tám",
+  "hotwords": [
+   "vtv tám"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "vtv tám"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ },
+ {
+  "written": "VTV9",
+  "kind": "code",
+  "display": "vtv chín",
+  "hotwords": [
+   "vtv chín"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "vtv chín"
+  ],
+  "n_occ": 0,
+  "n_err": 0,
+  "err_rate": 0.0,
+  "heard": []
+ }
+]
