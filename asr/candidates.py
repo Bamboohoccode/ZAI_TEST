@@ -12,6 +12,7 @@
 Bỏ các câu held-out (id % 10 == 9) để còn đánh giá được.
 """
 import difflib
+import inspect
 import json
 import re
 from collections import Counter, defaultdict
@@ -167,10 +168,9 @@ def refine(llm, word_lists, cands, thr=0.6, k=3, use_context=True, keep=frozense
     texts = list(raws)
     if idx and llm is not None:
         convs = [refine_conv(marked[i][0], raws[max(0, i - 2):i] if use_context else ()) for i in idx]
-        try:  # tắt thinking cho refine (planner dùng chung LLM có thể đang bật) -> không suy luận / dịch sang tiếng Anh
-            outs = llm.chat(convs, chat_kwargs=NO_THINK)
-        except TypeError:  # LLM không nhận chat_kwargs
-            outs = llm.chat(convs)
+        # tắt thinking cho refine (planner dùng chung LLM có thể đang bật) -> không suy luận / dịch sang tiếng Anh
+        takes_kw = "chat_kwargs" in inspect.signature(llm.chat).parameters
+        outs = llm.chat(convs, chat_kwargs=NO_THINK) if takes_kw else llm.chat(convs)
         for i, out in zip(idx, outs):
             texts[i] = accept_refine(raws[i], out)
     return texts, [m for m, _ in marked]

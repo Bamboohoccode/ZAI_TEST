@@ -114,7 +114,7 @@ ax.add_patch(FancyBboxPatch((X, 1540), BW, 210, boxstyle="round,pad=0,rounding_s
 ax.text(X + 16, 1645,
         "python pipeline.py --root DATA --split public_test \\\n"
         "    --lm lm/rnnlm/rnnlm.onnx --lm-scale <tốt nhất từ D> [--beam 8] [--vad] \\\n"
-        "    --conf-thr <từ D> --itn <ITN ckpt> --out submission.jsonl\n\n"
+        "    --conf-thr <từ D> --out submission.jsonl\n\n"
         "# --cand-train mặc định data/asr_train_plain.jsonl (bước A)",
         fontsize=9, family="monospace", color="#e5e7eb", va="center", linespacing=1.6)
 

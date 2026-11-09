@@ -158,7 +158,7 @@ python pipeline.py --root DATA --split train --lm lm/rnnlm/rnnlm.onnx --mark-onl
 # chỉ phần âm thanh, có LLM refine -> in WER trước / sau refine
 python pipeline.py --root DATA --split train --lm lm/rnnlm/rnnlm.onnx --no-llm --limit 200
 # cả pipeline
-python pipeline.py --root DATA --split public_test --lm lm/rnnlm/rnnlm.onnx --itn ITN_CKPT
+python pipeline.py --root DATA --split public_test --lm lm/rnnlm/rnnlm.onnx
 ```
 
 Bảng ngưỡng đo trước đây (150 câu held-out train, Zipformer beam, chưa có hotword/LM), cần đo lại với LM:

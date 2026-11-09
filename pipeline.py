@@ -285,6 +285,97 @@ class GoldLLM:
         return [f"<tool_call>{json.dumps(self.queue.pop(0), ensure_ascii=False)}</tool_call>"]
 
 
+def run_asr(model, paths, hotwords=None):
+    """Decode one sample's files (history turns + query) in one batched call (deterministic).
+    Zipformer RNNT (+RNNLM); `hotwords` bias the decoding when built with bias=True. -> [[(word, confidence)]] per file."""
+    return model.transcribe([str(p) for p in paths], hotwords=hotwords, words=True)
+
+
+# ---------------------------------------------------------------- agent
+
+
+def plan_step(llm, msgs, tools, trace, rounds, deadline):
+    """Planner proposes the next calls; verifier ACCEPTs or REJECTs with a reason, at most `rounds` times."""
+    query = msgs[-1]["content"] if msgs[-1]["role"] == "user" else next(m["content"] for m in reversed(msgs) if m["role"] == "user")
+    feedback = []
+    for attempt in range(rounds + 1):
+        out = llm.chat([msgs + feedback], tools)[0]
+        trace.append({"plan": out})
+        calls = parse_calls(out)
+        if not calls or attempt == rounds or time.time() > deadline:  # nothing to check, past N rejects, or out of time: run the last plan
+            return out, calls
+        shown = "\n".join(f"<tool_call>{json.dumps(c, ensure_ascii=False)}</tool_call>" for c in calls)
+        verdict = llm.chat([msgs + [{"role": "user", "content": VERIFY.format(query=query, calls=shown, text=re.sub(r"<tool_call>.*?</tool_call>", "", out, flags=re.S).strip())}]], tools)[0]
+        ok, reason = parse_verdict(verdict)
+        trace.append({"verify": verdict})
+        if ok:
+            return out, calls
+        feedback = [{"role": "assistant", "content": out}, {"role": "user", "content": REPLAN.format(reason=reason)}]
+
+
+# search keys: the string arguments that must name an entity of the user's own data (contact, channel, room...)
+SEARCH_KEYS = {"contacts.search": "query", "tv.guide": "channel", "tv.tune": "channel", "loyalty.list_vouchers": "merchant",
+               "loyalty.get_points": "program", "loyalty.redeem": "program", "household_chores.assign": "assignee",
+               "smart_home.get_status": "room", "podcast_radio.play": "station"}
+
+
+def snap_search_keys(call, pools, trace):
+    """Search-key biasing: snap the entity argument of a tool call to the closest name already seen for that app (by sound)."""
+    k = SEARCH_KEYS.get(call["name"])
+    pool = pools.get(call["name"].split(".")[0])
+    old = call["arguments"].get(k)
+    if k and pool and isinstance(old, str):
+        new = snap_value(old, pool)
+        if new != old:
+            call["arguments"][k] = new
+            trace.append({"snap": {"tool": call["name"], "arg": k, "from": old, "to": new}})
+
+
+def run_agent(env, llm, msgs, tools, catalog, trace, rounds=VERIFY_ROUNDS, deadline=float("inf"), pools=None):
+    done = set()
+    for _ in range(MAX_STEPS):
+        if time.time() > deadline:  # keep the calls that already ran
+            trace.append({"error": "time limit"})
+            return
+        out, calls = plan_step(llm, msgs, tools, trace, rounds, deadline)
+        if not calls:
+            return
+        ai = len(msgs)
+        msgs.append(assistant_msg(re.sub(r"<tool_call>.*?</tool_call>", "", out, flags=re.S).strip(), calls))
+        stop = False
+        for c in calls:
+            if pools and pools.get(c["name"].split(".")[0]):
+                snap_search_keys(c, pools, trace)
+            key = json.dumps(c, sort_keys=True, ensure_ascii=False)
+            v = env.validate(c["name"], c["arguments"])  # not logged: invalid calls never reach the submission
+            # the planner's own message is excluded: it would make every invented ID look seen
+            bad = v.get("ok") and unseen_ids(c, catalog, msgs[:ai] + msgs[ai + 1:])
+            if not v.get("ok"):
+                r = {"ok": False, "error": v.get("error"), "note": "Chưa thực thi, hãy sửa tham số."}
+            elif bad:  # a made-up ID runs as a silent no-op and breaks the state
+                r = {"ok": False, "error": f"Giá trị {bad} chưa xuất hiện trong kết quả tool nào, không được tự đặt ID.",
+                     "note": "Chưa thực thi. Gọi tool đọc để lấy ID, hoặc sys.ask_missing_info nếu không lấy được."}
+            elif key in done and catalog[c["name"]]["kind"] == "read":  # repeated writes can be legit
+                r = {"ok": False, "error": "Đã gọi tool đọc này với cùng tham số, dùng lại kết quả trước."}
+            else:
+                r = env.call(c["name"], c["arguments"])
+                done.add(key)
+                if pools is not None and isinstance(r, dict) and r.get("ok"):
+                    add_to_pool(pools, c["name"], r)
+                stop |= c["name"] == "sys.ask_missing_info"
+            msgs.append({"role": "tool", "content": clip(r)})
+        if stop:
+            return
+
+
+THR_SWEEP = (0.4, 0.5, 0.6, 0.7, 0.8)
+
+
+def hotword_words(lex):
+    """từ (viết thường) của các hotword --bias: không đánh dấu cho LLM sửa (xem Candidates.mark)."""
+    return frozenset(t for e in lex for t in tokens(e))
+
+
 def run_audio_only(a, items, asr, t_start, llm=None, cands=None):
     """--no-llm / --mark-only: VAD/ASR(+LM) -> đánh dấu conf thấp -> [LLM refine] cho mọi lượt user (không ITN: số giữ dạng chữ),
     không mapper/planner/tool. Mỗi dòng --out: {"id", "turns": [{"turn", "audio", "asr", "marked", "refine", ["ref"]}]}.
@@ -403,7 +494,7 @@ def main():
         torch.manual_seed(a.seed)
         torch.cuda.manual_seed_all(a.seed)
     except ImportError:
-        print(f"There is some problems when setting seed")
+        print("There is some problems when setting seed")
         pass
 
     root = Path(a.root)
