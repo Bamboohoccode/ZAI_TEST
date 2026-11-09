@@ -26,6 +26,9 @@ def fix_text(text):
     changes = []
     for name, pat, rep in RULES:
         def sub(m, name=name, rep=rep):
+            # "dịch giúp em lịch giao hàng ... sang tiếng anh": đã có "dịch" phía trước -> "lịch" là lịch thật
+            if name == "dịch" and re.search(r"\bdịch\b", m.string[:m.start()]):
+                return m.group(0)
             new = m.expand(rep)
             if new != m.group(0):
                 changes.append((name, m.group(0), new))

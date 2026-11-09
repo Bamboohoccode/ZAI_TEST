@@ -182,12 +182,13 @@ def main():
         pattern_only = st["n_occ"] == 0 and w in PATTERN_CODES
         if single_vi or trivial:
             continue
-        if not pattern_only and (st["n_err"] < a.min_err or rate < a.min_rate):
+        # mã theo mẫu (HTV7, VTV3...) luôn giữ dù ASR nghe đúng: thiếu nó thì snap kéo "htv bảy" về mã gần nhất (HTV3)
+        if w not in PATTERN_CODES and (st["n_err"] < a.min_err or rate < a.min_rate):
             continue
         # dạng đọc làm hotword: các biến thể ASR từng nghe đúng; chưa nghe đúng lần nào -> biến thể chuẩn (đầu tiên)
         hot = [f for f in fs if st["form_ok"][f]] or fs[:1]
         top = st["heard"].most_common(1)
-        if top and top[0][0] and ngrams[top[0][0]] >= a.legit_min:   # "khách hàn" -> nghe thành "khách hàng" (có thật)
+        if w not in PATTERN_CODES and top and top[0][0] and ngrams[top[0][0]] >= a.legit_min:   # "khách hàn" -> nghe thành "khách hàng" (có thật)
             continue
         cap = a.name_max if st["kind"] == "name" and all(_VI_SYL.match(x) for x in words) else a.max_score
         score = round(min(cap, a.base + a.k * rate), 2) if not pattern_only else a.base + 0.5

@@ -182,29 +182,66 @@ def _covered(win, ew, thr=0.8):
     return sum(max(ratio(phon(w), phon(x)) for x in win) >= thr for w in ew) / len(ew)
 
 
+_NUM_WORDS = {"không", "một", "mốt", "hai", "ba", "bốn", "tư", "năm", "lăm", "sáu", "bảy", "tám", "chín", "mười",
+              "mươi", "trăm", "nghìn", "ngàn", "linh", "lẻ", "triệu", "tỷ", "tỉ", "rưỡi"}
+
+
+def _nums(ws):
+    """chuỗi từ chỉ số (lăm = năm): 'htv bảy' vs 'htv ba' khác số -> không được snap (bỏ dấu thì gần như trùng)."""
+    return ["năm" if w == "lăm" else w for w in ws if w in _NUM_WORDS]
+
+
+def _subseq(a, b):
+    """a là dãy con của b: 'ron chính lâm' ([]) / 'ron chín lâm' ([chín]) vẫn snap được về 'ron chín lăm'."""
+    it = iter(b)
+    return all(x in it for x in a)
+
+
+def _dedup(words, rep):
+    """'nhắn sms sms' -> 'nhắn sms': hotword boost hay chèn lặp từ ngoại; chỉ gộp từ trong `rep` (không phải số/từ Việt)."""
+    out = []
+    for w in words:
+        if out and w.lower() == out[-1].lower() and w.lower() in rep:
+            continue
+        out.append(w)
+    return out
+
+
 def snap_text(text, entities, common=frozenset(), thr=0.9, thr_short=0.9, size_penalty=0.04, name_guard=True,
               aliases=None):
     """(new_text, changes). Duyệt entity dài trước; mỗi đoạn hyp chỉ bị thay một lần.
     Bỏ qua entity đã xuất hiện đúng trong câu; entity một âm tiết tiếng Việt (Lan, Bống...) không bao giờ bị snap
     (dễ đè lên từ thường chỉ khác dấu), chỉ snap entity ngoại / viết tắt / nhiều từ."""
+    als = aliases if aliases is not None else _aliases(entities)
     words = text.split()
     low = [re.sub(r"[^\w'-]", "", w.lower()) for w in words]
     used, changes, repl = [False] * len(words), [], {}
-    for surf, ew, ek, disp in sorted(aliases if aliases is not None else _aliases(entities), key=lambda a: -len(a[2])):
+    for surf, ew, ek, disp in sorted(als, key=lambda a: -len(a[2])):
         n, best = len(ew), None
         if len(ek) < 3 or _has_run(low, tokens(disp)):
             continue
         if n == 1 and _VI_SYL.match(ew[0]):
             continue
+        # cụm toàn âm tiết Việt; trừ mã có số hiển thị dạng đọc chữ thường ("ron chín lăm"), còn tên "Anh Mười" vẫn tính
+        all_vi = all(_VI_SYL.match(w) for w in ew) and not (_nums(ew) and disp == disp.lower())
         # tên người tiếng Việt (Lê Minh, Phạm Hùng): mọi âm tiết là âm tiết Việt viết hoa
-        person = name_guard and n > 1 and all(_VI_SYL.match(w) for w in ew) and all(x[:1].isupper() for x in disp.split()[-n:])
+        person = name_guard and n > 1 and all_vi and all(x[:1].isupper() for x in disp.split()[-n:])
         for size in range(max(1, n - 1), n + 2):
             for i in range(len(words) - size + 1):
                 if any(used[i:i + size]):
                     continue
                 win = low[i:i + size]
+                if not _subseq(_nums(win), _nums(ew)):  # "htv bảy" -> "htv ba": không đổi số đã nghe được
+                    continue
+                exact = win == ew
                 # "nhé mình" -> "Lê Minh": cửa sổ toàn từ thường, chỉ khớp nhờ gộp l/n + bỏ dấu -> không phải tên
                 if person and all(w in common for w in win) and strip_tones(" ".join(win)) != strip_tones(" ".join(ew)):
+                    continue
+                # cụm toàn âm tiết Việt (Bến Thành): "bên thanh toán" -> "Bến Thành toán"; chỉ snap khi khớp đúng dấu
+                if all_vi and not exact and all(w in common for w in win):
+                    continue
+                # 1 từ ngoại ghép từ >= 2 âm tiết Việt: "ứng lẹ món" -> "ứng lemon"; trừ cách nghe sai đã mine (alias)
+                if n == 1 and size > 1 and not exact and all(_VI_SYL.match(w) for w in win):
                     continue
                 r = ratio(key(win), ek)
                 if r < 1.0 and size > 1 and any(w in common and len(w) <= 2 for w in win):  # đừng nuốt từ chức năng ngắn
@@ -229,7 +266,8 @@ def snap_text(text, entities, common=frozenset(), thr=0.9, thr_short=0.9, size_p
         else:
             out.append(words[i])
             i += 1
-    return " ".join(out), changes
+    rep = {w for _, ew, _, _ in als for w in ew if not _VI_SYL.match(w) and w not in _NUM_WORDS}
+    return " ".join(_dedup(out, rep)), changes
 
 
 def load_global(path):

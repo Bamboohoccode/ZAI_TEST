@@ -1,0 +1,33 @@
+# Voice agent pipeline — cài: pip install -r requirements.txt
+# Phiên bản ">=" là bản đã chạy thử ở local; sherpa-onnx ghim cứng vì code dùng API của bản này (lm/lodr, hotwords bpe).
+
+# --- Lõi / tiện ích
+numpy>=2.0
+huggingface_hub>=0.30          # chỉ đọc model từ cache local (offline), không tải lúc suy luận
+
+# --- ASR: Zipformer (sherpa-onnx) + VAD + hotword + RNNLM fusion   (asr/, hotwords/, lm/)
+sherpa-onnx==2.0.1
+sentencepiece>=0.2
+soundfile>=0.12
+silero-vad>=6.0                # chỉ dùng file silero_vad.onnx đóng gói sẵn (asr/vad.py)
+librosa>=0.10                  # resample khi audio không phải 16 kHz (asr/vad.py)
+
+# --- ASR ChunkFormer (pipeline.py --asr-model chunkformer)
+chunkformer>=1.2
+
+# --- Torch / HF: ITN (ITN/), seq2seq mapper (mapper/), train RNNLM (lm/)
+torch>=2.4
+transformers>=4.45
+safetensors>=0.4
+datasets>=2.20
+accelerate>=0.30               # Trainer của transformers (ITN/main.py, mapper/seq2seq_mapper.py train)
+validators>=0.22               # ITN/preprocess.py
+onnx>=1.16                     # export RNNLM (lm/train_rnnlm.py)
+
+# --- LLM mapper + planner/verifier (pipeline.py khi KHÔNG dùng --no-llm); cần GPU CUDA.
+# vllm kéo theo đúng bản torch nó cần -> nếu xung đột với torch ở trên, cài vllm trước rồi bỏ dòng torch.
+vllm
+
+# --- Tuỳ chọn
+# onnxruntime                  # lm/train_rnnlm.py so khớp ONNX với torch (bỏ qua nếu không có)
+# pandas, matplotlib           # xem bảng hotword trong notebook / vẽ docs/asr_workflow.png

@@ -98,8 +98,9 @@ class ZipformerASR:
         if b and os.path.exists(b.name):
             os.unlink(b.name)
 
-    def transcribe(self, paths, hotwords=None, score=None, hi=None, lo=None, glossary_score=None):
+    def transcribe(self, paths, hotwords=None, score=None, hi=None, lo=None, glossary_score=None, words=False):
         """paths: list wav. hotwords: list[str] entity dùng chung cho cả lô (hoặc None). Trả list[str] chữ thường.
+        words=True -> mỗi file trả [(từ, conf)] (xem word_confidences) thay vì chuỗi.
         Mặc định chia điểm: tên riêng hi, cụm thường lo, từ ngoại viết thường của glossary glossary_score (0 = bỏ).
         score=<số> -> kiểu cũ, mọi hotword cùng một điểm. Không truyền hotwords -> dùng hotwords_file (nếu có)."""
         import soundfile as sf
@@ -119,4 +120,28 @@ class ZipformerASR:
             s.accept_waveform(sr, np.ascontiguousarray(x))
             streams.append(s)
         self.rec.decode_streams(streams)
+        if words:
+            return [word_confidences(s.result) for s in streams]
         return [s.result.text.strip().lower() for s in streams]
+
+
+def word_confidences(result):
+    """[(từ, conf)] từ kết quả sherpa-onnx: gộp token BPE thành từ (token mở đầu bằng khoảng trắng / '▁' = từ mới),
+    conf = exp(log-prob nhỏ nhất của các token trong từ), trong khoảng (0, 1]."""
+    import math
+    lps = list(getattr(result, "ys_log_probs", None) or [])
+    toks = list(result.tokens)
+    if len(lps) != len(toks):  # bản sherpa-onnx không trả log-prob -> coi như chắc chắn hết
+        lps = [0.0] * len(toks)
+    out = []
+    for t, lp in zip(toks, lps):
+        new = t.startswith((" ", "▁")) or not out
+        piece = t.lstrip(" ▁").lower()
+        if not piece:
+            continue
+        if new:
+            out.append([piece, lp])
+        else:
+            out[-1][0] += piece
+            out[-1][1] = min(out[-1][1], lp)
+    return [(w, math.exp(lp)) for w, lp in out]

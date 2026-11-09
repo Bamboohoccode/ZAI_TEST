@@ -121,6 +121,10 @@ def num_variants(tok):
         out = int_variants(n)
         if len(tok) >= 3 and n < 1000 and tok[0] != "0":
             out.append(digits(tok))                           # mã số: 101 -> một không một
+        if len(tok) == 4 and tok[0] != "0":
+            if tok[2] != "0":                                 # năm 2025 -> hai không hai lăm (đọc theo cặp)
+                out += [f"{digits(tok[:2])} {x}" for x in _two(int(tok[2:]))]
+            out.append(digits(tok))                           # mã 4 số: 2015 -> hai không một năm
         if tok[0] == "0" and len(tok) > 1:
             out = [digits(tok)]
         return out
@@ -150,7 +154,9 @@ _SYM = [
     (re.compile(r"(\d)\s*k\b", re.I), r"\1 ca"),
     (re.compile(r"(\d)\s*đ\b"), r"\1 đồng"),
     (re.compile(r"(\d+)h(?!\d)"), r"\1 giờ"),           # 24h -> 24 giờ
-    (re.compile(r"\+(?=\d)"), " cộng "),
+    (re.compile(r"\+"), " cộng "),                    # S+ Sport, K+, +84
+    (re.compile(r"&"), " và "),
+    (re.compile(r"@"), " a còng "),
 ]
 _CODE = re.compile(r"^(?=.*\d)(?=.*[^\W\d_])[\w-]+$")
 
@@ -203,6 +209,10 @@ if __name__ == "__main__":
         ("105 người", None): "một trăm linh năm người",
         ("lớp 8A3", None): "lớp tám a ba",
         ("tầng 21", None): "tầng hai mươi mốt",
+        ("kênh S+ Sport", "kênh s cộng sport"): "kênh s cộng sport",
+        ("năm 2025", "năm hai không hai lăm"): "năm hai không hai lăm",
+        ("năm 2025", None): "năm hai nghìn không trăm hai mươi lăm",
+        ("gửi a@b.com", None): "gửi a a còng b com",
     }
     bad = [(i, to_spoken(*i), o) for i, o in cases.items() if to_spoken(*i) != o]
     for b in bad:

@@ -299,6 +299,43 @@
   ]
  },
  {
+  "written": "VTV3",
+  "kind": "code",
+  "display": "vtv ba",
+  "hotwords": [
+   "vtv ba"
+  ],
+  "score": 2.0,
+  "aliases": [
+   "vtv ba"
+  ],
+  "n_occ": 16,
+  "n_err": 8,
+  "err_rate": 0.5,
+  "heard": [
+   [
+    "vtv",
+    4
+   ],
+   [
+    "chính tv ba",
+    1
+   ],
+   [
+    "vtv bài",
+    1
+   ],
+   [
+    "về tuyệt vời bà",
+    1
+   ],
+   [
+    "video gaba",
+    1
+   ]
+  ]
+ },
+ {
   "written": "CineViệt",
   "kind": "foreign",
   "display": "CineViệt",
@@ -804,6 +841,39 @@
    ],
    [
     "anh mời em",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "HTV7",
+  "kind": "code",
+  "display": "htv bảy",
+  "hotwords": [
+   "htv bảy"
+  ],
+  "score": 1.5,
+  "aliases": [
+   "htv bảy"
+  ],
+  "n_occ": 16,
+  "n_err": 4,
+  "err_rate": 0.25,
+  "heard": [
+   [
+    "ở tv trên fptv bảy",
+    1
+   ],
+   [
+    "hot tivi bảy",
+    1
+   ],
+   [
+    "htv bạn",
+    1
+   ],
+   [
+    "và tv cai hát từ vải đến",
     1
    ]
   ]
@@ -1574,6 +1644,35 @@
    ],
    [
     "thoát ai",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "VTV1",
+  "kind": "code",
+  "display": "vtv một",
+  "hotwords": [
+   "vtv một"
+  ],
+  "score": 1.43,
+  "aliases": [
+   "vtv một"
+  ],
+  "n_occ": 14,
+  "n_err": 3,
+  "err_rate": 0.214,
+  "heard": [
+   [
+    "bên tv một",
+    1
+   ],
+   [
+    "vtv",
+    1
+   ],
+   [
+    "về chơi game một",
     1
    ]
   ]
@@ -2784,6 +2883,27 @@
   ]
  },
  {
+  "written": "VTV6",
+  "kind": "code",
+  "display": "vtv sáu",
+  "hotwords": [
+   "vtv sáu"
+  ],
+  "score": 1.36,
+  "aliases": [
+   "vtv sáu"
+  ],
+  "n_occ": 11,
+  "n_err": 2,
+  "err_rate": 0.182,
+  "heard": [
+   [
+    "vtv",
+    2
+   ]
+  ]
+ },
+ {
   "written": "VivuFood",
   "kind": "foreign",
   "display": "VivuFood",
@@ -3772,6 +3892,27 @@
    ],
    [
     "xem clip",
+    1
+   ]
+  ]
+ },
+ {
+  "written": "VOV3",
+  "kind": "code",
+  "display": "vov ba",
+  "hotwords": [
+   "vov ba"
+  ],
+  "score": 2.5,
+  "aliases": [
+   "vov ba"
+  ],
+  "n_occ": 1,
+  "n_err": 1,
+  "err_rate": 1.0,
+  "heard": [
+   [
+    "v ov ba",
     1
    ]
   ]

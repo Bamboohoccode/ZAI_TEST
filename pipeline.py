@@ -11,6 +11,8 @@ python pipeline.py --root DATA --split public_test --asr-model zipformer --hotwo
     --vad --lm lm/rnnlm/rnnlm.onnx --lm-scale 0.3                                       # hotword cố định (không state.json) + VAD + LM
 python pipeline.py --root DATA --split train --asr-model zipformer --hotwords-file hotwords/hotwords_global.txt \
     --no-llm --limit 200                                       # chỉ phần âm thanh (ASR->snap->fix->ITN), có nhãn -> in WER
+python pipeline.py --root DATA --split public_test --asr-model zipformer --lm lm/rnnlm/rnnlm.onnx --refine
+    # ASR(+LM) -> đánh dấu từ conf thấp + ứng viên -> LLM sửa -> ITN (thay snap_text/asr_fix), xem docs/PIPELINE.md mục 5
 """
 import argparse
 import gc
@@ -27,6 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from hotwords.bias import app_pools, build_lexicon, common_words, snap_text, snap_value  # noqa: E402
 from asr.asr_fix import fix_text  # noqa: E402
+from asr.candidates import Candidates, refine  # noqa: E402
 
 ASR_MODEL = "khanhld/chunkformer-ctc-large-vie"
 ZIPFORMER_MODEL = "hynt/Zipformer-30M-RNNT-6000h"
@@ -361,11 +364,14 @@ def load_itn(folder_path, device="cpu", code_dir=None):
     return itn
 
 
-def run_asr(model, paths, hotwords=None):
+def run_asr(model, paths, hotwords=None, words=False):
     """Decode one sample's files (history turns + query) in one batched call (deterministic).
-    ChunkFormer: CTC greedy. Zipformer (ZipformerASR): RNNT, `hotwords` bias the decoding when it was built with bias=True."""
+    ChunkFormer: CTC greedy. Zipformer (ZipformerASR): RNNT, `hotwords` bias the decoding when it was built with bias=True.
+    words=True (Zipformer only): [(word, confidence)] per file instead of a string."""
     if hasattr(model, "rec"):  # ZipformerASR
-        return model.transcribe([str(p) for p in paths], hotwords=hotwords)
+        return model.transcribe([str(p) for p in paths], hotwords=hotwords, words=words)
+    if words:
+        raise ValueError("--refine cần --asr-model zipformer (ChunkFormer không trả confidence theo từ)")
     import torch
     with torch.no_grad():
         texts = model.batch_decode(audio_paths=[str(p) for p in paths], chunk_size=64, left_context_size=128,
@@ -447,9 +453,10 @@ def run_agent(env, llm, msgs, tools, catalog, trace, rounds=VERIFY_ROUNDS, deadl
             return
 
 
-def run_audio_only(a, items, asr, itn, common, g_alias, t_start):
+def run_audio_only(a, items, asr, itn, common, g_alias, t_start, llm=None, cands=None):
     """--no-llm: VAD/ASR -> snap_text -> asr_fix -> ITN cho mọi lượt user, không mapper/planner/tool.
     Mỗi dòng --out: {"id", "turns": [{"turn", "audio", "asr", "snap", "fix", "itn", ["ref"]}]}.
+    --refine: VAD/ASR(+LM) -> đánh dấu conf thấp -> LLM sửa -> ITN; khi đó "snap" = câu đã đánh dấu, "fix" = câu LLM sửa.
     Split có audio_text (train) -> in WER: dạng đọc (fix) so với ref đổi sang dạng đọc, dạng viết (itn) so với norm(ref)."""
     from textnorm.textutil import norm, wer_counts
     from textnorm.vi_num import to_spoken
@@ -462,19 +469,24 @@ def run_audio_only(a, items, asr, itn, common, g_alias, t_start):
             lex = []
             if a.bias:
                 lex = build_lexicon(root / a.split / f"{a.split}_environment" / item["id"] / "state.json", item["context"])
-            asr_out = ([u["audio_text"] for u in turns] if asr is None
-                       else run_asr(asr, [root / a.split / u["audio"] for u in turns], lex or None))
-            snap = asr_out
-            if lex:
-                snap = [snap_text(r, lex, common)[0] for r in asr_out]
-            elif g_alias:
-                snap = [snap_text(r, [], common, aliases=g_alias)[0] for r in asr_out]
-            fix = snap if a.no_asr_fix else [fix_text(r)[0] for r in snap]
+            if a.refine:
+                wls = run_asr(asr, [root / a.split / u["audio"] for u in turns], lex or None, words=True)
+                asr_out = [" ".join(w for w, _ in wl) for wl in wls]
+                fix, snap = refine(llm, wls, cands, a.conf_thr, a.cand_k)
+            else:
+                asr_out = ([u["audio_text"] for u in turns] if asr is None
+                           else run_asr(asr, [root / a.split / u["audio"] for u in turns], lex or None))
+                snap = asr_out
+                if lex:
+                    snap = [snap_text(r, lex, common)[0] for r in asr_out]
+                elif g_alias:
+                    snap = [snap_text(r, [], common, aliases=g_alias)[0] for r in asr_out]
+                fix = snap if a.no_asr_fix else [fix_text(r)[0] for r in snap]
             itn_out = [itn(r) or r for r in fix] if itn else fix
             rows = []
             for k, (u, r0, r1, r2, r3) in enumerate(zip(turns, asr_out, snap, fix, itn_out)):
-                row = {"turn": "QUERY" if k == len(turns) - 1 else f"u{k + 1}", "audio": u["audio"],
-                       "asr": r0, "snap": r1, "fix": r2, "itn": r3}
+                row = {"turn": "QUERY" if k == len(turns) - 1 else f"u{k + 1}", "audio": u["audio"], "asr": r0,
+                       **({"marked": r1, "refine": r2} if a.refine else {"snap": r1, "fix": r2}), "itn": r3}
                 if u.get("audio_text"):
                     ref = u["audio_text"]
                     row["ref"] = ref
@@ -484,7 +496,7 @@ def run_audio_only(a, items, asr, itn, common, g_alias, t_start):
                         tot[key][1] += n
                 rows.append(row)
             fout.write(json.dumps({"id": item["id"], "turns": rows}, ensure_ascii=False) + "\n")
-            changed = sum(r["asr"] != r["fix"] for r in rows)
+            changed = sum(r["asr"] != r.get("fix", r.get("refine")) for r in rows)
             print(f"[{i + 1}/{len(items)}] {item['id']} {len(rows)} lượt, snap/fix đổi {changed} "
                   f"{time.time() - t0:.1f}s | {rows[-1]['itn'][:90]}", flush=True)
     total = time.time() - t_start
@@ -517,6 +529,15 @@ def main():
     ap.add_argument("--lm-scale", type=float, default=0.3)
     ap.add_argument("--beam", type=int, default=4, help="max_active_paths của modified_beam_search")
     ap.add_argument("--no-asr-fix", action="store_true", help="tắt luật sửa lỗi ASR (asr_fix.py: lịch->dịch, ron, chữ cái rời)")
+    ap.add_argument("--refine", action="store_true",
+                    help="Zipformer: đánh dấu từ conf thấp + ứng viên gần âm (asr/candidates.py) rồi cho --llm sửa, thay snap_text/asr_fix; "
+                         "sau đó mới ITN")
+    ap.add_argument("--mark-only", action="store_true",
+                    help="như --refine nhưng chỉ đánh dấu [từ|ứng viên...], không gọi LLM (để duyệt ứng viên, không cần GPU)")
+    ap.add_argument("--conf-thr", type=float, default=0.6, help="--refine: từ có confidence < ngưỡng thì đánh dấu")
+    ap.add_argument("--cand-k", type=int, default=3, help="--refine: số ứng viên mỗi từ")
+    ap.add_argument("--cand-train", default=str(Path(__file__).resolve().parent / "data" / "asr_train_tn.jsonl"),
+                    help="--refine: jsonl có hyp + ref_spoken để học bảng nhầm lẫn và từ vựng")
     ap.add_argument("--asr-ckpt", help="fine-tuned ChunkFormer .pt loaded onto --asr")
     ap.add_argument("--asr-device", default="cuda:0")
     ap.add_argument("--itn", help="folder of the ITN checkpoint trained by ITN/main.py; runs on ASR text before the mapper")
@@ -538,10 +559,12 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
+    if a.mark_only:  # chỉ đánh dấu: kéo theo --refine (không LLM) và --no-llm
+        a.refine, a.no_llm = True, True
     if a.no_llm and a.out == "submission.jsonl":  # đừng ghi đè file nộp bằng output không có tool call
         a.out = "asr_out.jsonl"
     gold = a.llm == "gold"
-    rounds = 0 if gold else a.verify_rounds
+    rounds = 0 if gold else a.verify_rounds/
 
     os.environ.setdefault("VLLM_ENABLE_V1_MULTIPROCESSING", "0")  # in-process engine: reproducible, freeable
     random.seed(a.seed)
@@ -578,8 +601,13 @@ def main():
     from hotwords.bias import load_global
     g_alias = load_global(Path(a.hotwords_file).with_suffix(".json")) if a.hotwords_file and Path(a.hotwords_file).with_suffix(".json").exists() else None
     itn = load_itn(a.itn, a.itn_device, a.itn_code) if a.itn else None
-    if a.no_llm:
-        return run_audio_only(a, items, asr, itn, common, g_alias, t_start)
+    if a.refine and (a.text or a.asr_model != "zipformer"):
+        sys.exit("--refine cần --asr-model zipformer và không dùng với --text")
+    cands = Candidates.from_train(a.cand_train) if a.refine else None
+    if a.no_llm:  # --refine vẫn cần một LLM để sửa câu (không có planner/tool)
+        llm = VLLM(a.llm, a.llm_lora, a.gpu_mem, a.seed, 4096, 256, {"enable_thinking": False}, a.eager) \
+            if a.refine and not gold and not a.mark_only else None
+        return run_audio_only(a, items, asr, itn, common, g_alias, t_start, llm, cands)
     m_args = (a.mapper, a.mapper_lora, a.mapper_gpu_mem, a.seed, 2048, 256, {"enable_thinking": False}, a.eager)
     mapper = None if a.mapper == "none" or gold else RemoteVLLM(a.mapper_device, *m_args) if a.mapper_device else VLLM(*m_args)
     llm = GoldLLM() if gold else VLLM(a.llm, a.llm_lora, a.gpu_mem, a.seed, MAX_CTX, MAX_NEW, None, a.eager)
@@ -597,16 +625,22 @@ def main():
                     state = root / a.split / f"{a.split}_environment" / item["id"] / "state.json"
                     lex = build_lexicon(state, item["context"])
                     pools = app_pools(state)
-                raw = [u["audio_text"] for u in turns] if a.text else run_asr(asr, [root / a.split / u["audio"] for u in turns], lex or None)
-                if g_alias and not lex and not a.text:  # hotword toàn cục: snap theo danh sách cố định, không đọc state.json
+                if a.refine and not a.text:  # ASR(+LM) -> đánh dấu từ conf thấp + ứng viên -> LLM sửa (thay snap_text/asr_fix)
+                    wls = run_asr(asr, [root / a.split / u["audio"] for u in turns], lex or None, words=True)
+                    raw, marked = refine(None if gold else llm, wls, cands, a.conf_thr, a.cand_k)
+                    trace.extend({"refine": {"marked": m, "to": t}} for m, t in zip(marked, raw) if "[" in m)
+                else:
+                    raw = [u["audio_text"] for u in turns] if a.text else run_asr(asr, [root / a.split / u["audio"] for u in turns], lex or None)
+                post = not a.text and not a.refine  # --refine thay snap_text + asr_fix
+                if post and g_alias and not lex:  # hotword toàn cục: snap theo danh sách cố định, không đọc state.json
                     snapped = [snap_text(r, [], common, aliases=g_alias) for r in raw]
                     trace.extend({"snap_text": {"from": r, "changes": ch}} for r, (_, ch) in zip(raw, snapped) if ch)
                     raw = [t for t, _ in snapped]
-                if lex and not a.text:  # fix near-miss entities left after decoding ("gia lô" -> "Zalo")
+                if post and lex:  # fix near-miss entities left after decoding ("gia lô" -> "Zalo")
                     snapped = [snap_text(r, lex, common) for r in raw]
                     trace.extend({"snap_text": {"from": r, "changes": ch}} for r, (_, ch) in zip(raw, snapped) if ch)
                     raw = [t for t, _ in snapped]
-                if not a.text and not a.no_asr_fix:  # lỗi có hệ thống: "lịch sang tiếng anh" -> "dịch", "xăng rồi chín lăm" -> "ron"
+                if post and not a.no_asr_fix:  # lỗi có hệ thống: "lịch sang tiếng anh" -> "dịch", "xăng rồi chín lăm" -> "ron"
                     fixed = [fix_text(r) for r in raw]
                     trace.extend({"asr_fix": {"from": r, "changes": ch}} for r, (_, ch) in zip(raw, fixed) if ch)
                     raw = [t for t, _ in fixed]

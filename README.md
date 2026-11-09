@@ -5,16 +5,17 @@ Repo dự án **LifeMate** cho Zalo AI Challenge 2026: agent nhận giọng nói
 ## Tài liệu
 
 - [docs/Overview_PJ.md](docs/Overview_PJ.md): tổng quan dự án, pipeline, phân công, cấu trúc repo, rủi ro.
-- [docs/PIPELINE.md](docs/PIPELINE.md): luồng ASR → mapper → planner ↔ verifier → tool.
+- [docs/PIPELINE.md](docs/PIPELINE.md): luồng ASR → mapper → planner ↔ verifier → tool; mục 5 là `--refine` (confidence + LLM sửa).
 
 ## Cấu trúc
 
 ```
-├── pipeline.py              # entry: ASR -> ITN -> mapper -> planner <-> verifier -> zaic_tools
+├── pipeline.py              # entry: ASR -> [refine] -> ITN -> mapper -> planner <-> verifier -> zaic_tools
 ├── asr/                     # Zipformer (sherpa-onnx), VAD, luật sửa lỗi, eval/test ASR
-│   ├── asr_zipformer.py     #   ZipformerASR(hotwords_file=, lm=, vad=) — offline
+│   ├── asr_zipformer.py     #   ZipformerASR(hotwords_file=, lm=, vad=) — offline; transcribe(words=True) -> (từ, conf)
+│   ├── candidates.py        #   --refine: đánh dấu từ conf thấp + ứng viên gần âm, prompt LLM sửa
 │   ├── vad.py               #   silero VAD (trim khoảng lặng)
-│   ├── asr_fix.py           #   luật sửa lỗi hệ thống (lịch->dịch, ron...)
+│   ├── asr_fix.py           #   luật sửa lỗi hệ thống (lịch->dịch, ron...), tắt khi --refine
 │   ├── eval_asr.py          #   WER trên held-out theo cấu hình (greedy/beam/hw/vad/lm/snap/fix)
 │   └── test_asr_public.py   #   in transcript public_test để duyệt
 ├── hotwords/                # biasing: hotword cố định + snap
