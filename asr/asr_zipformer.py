@@ -20,18 +20,24 @@ DEFAULT_REPO = "hynt/ZipFormer-150M-CR-CTC-RNNT-6000h"
 
 
 def _resolve_dir(name):
-    """thư mục local, hoặc snapshot đã có trong HF cache (local_files_only: không bao giờ tải từ mạng)."""
+    """thư mục local, hoặc snapshot trong HF cache. Chưa có trong cache: tự tải (chỉ file onnx + bpe.model), trừ khi
+    HF_HUB_OFFLINE=1 (lúc chấm / Docker offline: model phải được tải sẵn vào image)."""
     if Path(name).expanduser().is_dir():
         return Path(name).expanduser()
-    from huggingface_hub import try_to_load_from_cache
-    try:
-        p = try_to_load_from_cache(name, "bpe.model")  # snapshot có thể "incomplete" (thiếu README...) vẫn dùng được
-        if isinstance(p, str) and any(Path(p).parent.glob("encoder-*.onnx")):
-            return Path(p).parent
-        raise FileNotFoundError(name)
-    except Exception as e:  # noqa: BLE001
-        raise FileNotFoundError(f"không thấy model '{name}' trong thư mục local hay HF cache (chế độ offline, không tải). "
-                                f"Truyền đường dẫn thư mục chứa encoder/decoder/joiner-*.onnx + bpe.model.") from e
+    from huggingface_hub import snapshot_download, try_to_load_from_cache
+    p = try_to_load_from_cache(name, "bpe.model")  # snapshot có thể "incomplete" (thiếu README...) vẫn dùng được
+    if isinstance(p, str) and any(Path(p).parent.glob("encoder-*.onnx")):
+        return Path(p).parent
+    if os.environ.get("HF_HUB_OFFLINE", "0") not in ("1", "true", "True"):
+        try:
+            d = Path(snapshot_download(name, allow_patterns=["*.onnx", "bpe.model"]))
+            if any(d.glob("encoder-*.onnx")):
+                return d
+        except Exception as e:  # noqa: BLE001
+            raise FileNotFoundError(f"không tải được model '{name}' ({e}). Kaggle: bật Internet trong Settings, hoặc "
+                                    f"thêm model làm Input rồi truyền --zipformer <thư mục chứa *.onnx + bpe.model>.") from e
+    raise FileNotFoundError(f"không thấy model '{name}' trong thư mục local hay HF cache (HF_HUB_OFFLINE=1, không tải). "
+                            f"Truyền đường dẫn thư mục chứa encoder/decoder/joiner-*.onnx + bpe.model.")
 
 
 def model_dir(name=DEFAULT_REPO):
