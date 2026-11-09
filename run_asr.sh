@@ -21,7 +21,7 @@ BEAM=${BEAM:-4}
 CONF_THR=${CONF_THR:-0.6}
 CAND=${CAND:-data/asr_train_plain.jsonl}
 ITN=${ITN:-}
-ZIPFORMER=${ZIPFORMER:-hynt/Zipformer-30M-RNNT-6000h}
+ZIPFORMER=${ZIPFORMER:-hynt/ZipFormer-150M-CR-CTC-RNNT-6000h}
 OUT=${OUT:-asr_out.jsonl}
 
 args=(--root "$DATA" --split "$SPLIT" --limit "$LIMIT" --zipformer "$ZIPFORMER" --beam "$BEAM"

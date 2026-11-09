@@ -151,7 +151,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="data/asr_train_plain.jsonl", help="jsonl có id/ref[/ref_spoken/hyp] (eval_asr.py --dump)")
     ap.add_argument("--train-jsonl", help="dùng audio_text của DATA/train/train.jsonl nếu không có --data")
-    ap.add_argument("--zipformer", default="hynt/Zipformer-30M-RNNT-6000h")
+    ap.add_argument("--zipformer", default="hynt/ZipFormer-150M-CR-CTC-RNNT-6000h")
     ap.add_argument("--out", default="lm/rnnlm")
     ap.add_argument("--emb", type=int, default=256)
     ap.add_argument("--hidden", type=int, default=256)

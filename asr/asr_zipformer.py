@@ -1,7 +1,7 @@
-"""Zipformer RNNT (sherpa-onnx) ASR: hynt/Zipformer-30M-RNNT-6000h. Chạy offline hoàn toàn (chỉ đọc model từ thư mục
+"""Zipformer RNNT (sherpa-onnx) ASR: hynt/ZipFormer-150M-CR-CTC-RNNT-6000h. Chạy offline hoàn toàn (chỉ đọc model từ thư mục
 local hoặc HF cache, không tải).
 
-    asr = ZipformerASR("hynt/Zipformer-30M-RNNT-6000h")                      # HF id (đã có trong cache) hoặc thư mục
+    asr = ZipformerASR("hynt/ZipFormer-150M-CR-CTC-RNNT-6000h")                      # HF id (đã có trong cache) hoặc thư mục
     asr = ZipformerASR(..., hotwords_file="hotwords/hotwords_global.txt")             # hotword cố định, nạp 1 lần lúc khởi tạo
     asr = ZipformerASR(..., lm="lm/rnnlm/rnnlm.onnx", lm_scale=0.3)            # LM fusion (RNNLM, train_rnnlm.py)
     asr = ZipformerASR(..., vad=True)                                         # cắt khoảng lặng bằng silero VAD (vad.py)
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-DEFAULT_REPO = "hynt/Zipformer-30M-RNNT-6000h"
+DEFAULT_REPO = "hynt/ZipFormer-150M-CR-CTC-RNNT-6000h"
 
 
 def _resolve_dir(name):
@@ -133,12 +133,14 @@ def word_confidences(result):
     toks = list(result.tokens)
     if len(lps) != len(toks):  # bản sherpa-onnx không trả log-prob -> coi như chắc chắn hết
         lps = [0.0] * len(toks)
-    out = []
+    out, pending = [], False
     for t, lp in zip(toks, lps):
-        new = t.startswith((" ", "▁")) or not out
+        new = t.startswith((" ", "▁")) or not out or pending
         piece = t.lstrip(" ▁").lower()
-        if not piece:
+        if not piece:  # token "▁" đứng riêng (BPE tách "▁ổ" -> "▁" + "ổ"): token sau mở từ mới, không dính vào từ trước
+            pending = True
             continue
+        pending = False
         if new:
             out.append([piece, lp])
         else:

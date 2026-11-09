@@ -13,6 +13,7 @@ Bỏ các câu held-out (id % 10 == 9) để còn đánh giá được.
 """
 import difflib
 import json
+import re
 from collections import Counter, defaultdict
 
 from asr.vi_phon import dist, parse
@@ -85,24 +86,68 @@ class Candidates:
         return " ".join(parts), n
 
 
-REFINE_SYSTEM = """Bạn sửa lỗi nhận dạng giọng nói (ASR) tiếng Việt cho câu người dùng nói với trợ lý ảo \
-(đặt lịch, báo thức, chuyển tiền, nhắn tin, gọi xe, đặt vé, nhạc, tivi, nhà thông minh, giá xăng, giá vàng...).
-- Chỗ nghi ngờ được đánh dấu [a|b|c]: a là từ ASR nghe được, b, c là các từ có âm gần giống.
-- Mỗi chỗ đánh dấu, chọn từ hợp ngữ cảnh nhất: giữ a, chọn b/c, hoặc một từ khác đọc gần giống a nếu rõ ràng đúng hơn.
-- Từ ngoài ngoặc giữ nguyên, trừ khi sai hiển nhiên (ví dụ "sang chín mươi lăm" là "xăng chín mươi lăm").
-- Giữ nguyên tên riêng, từ địa phương, từ tiếng Anh, không thêm bớt ý.
-- Viết chữ thường, không dấu câu, số giữ dạng chữ (hai mươi lăm, không viết 25).
-- Chỉ trả về một dòng là câu đã sửa, không giải thích."""
+REFINE_SYSTEM = """Bạn là bộ sửa lỗi nhận dạng giọng nói (ASR) tiếng Việt. Câu vào là lời người dùng nói với trợ lý ảo \
+(đặt lịch, báo thức, nhắc việc, chuyển tiền, ví, hoá đơn, nhắn tin, gọi điện, gọi xe, đặt vé tàu/xe/máy bay, gửi xe, \
+nhạc, tivi, nhà thông minh, giá xăng, giá vàng, mua sắm, đơn hàng, trả hàng, công thức nấu ăn, tủ bếp, ghi chú...).
+
+Định dạng câu vào:
+- Chỗ ASR không chắc được đánh dấu [a|b|c|d]: a là từ ASR nghe được, b, c, d là các từ có âm gần giống.
+- Danh sách ứng viên chỉ là GỢI Ý, có thể thiếu từ đúng. Từ ngoài ngoặc là chỗ ASR khá chắc, nhưng vẫn có thể sai.
+
+Cách sửa:
+1. Đọc cả câu và đoán người dùng muốn trợ lý làm gì (đặt gì, mua gì, gửi cho ai, lúc nào).
+2. Mỗi chỗ đánh dấu: chọn ứng viên hợp ngữ cảnh nhất; nếu không ứng viên nào hợp, dùng từ khác ĐỌC GẦN GIỐNG a \
+(lẫn s/x, ch/tr, d/gi/r, l/n, -n/-ng, -t/-c, hỏi/ngã, sai thanh điệu...); nếu không chắc thì giữ a.
+3. Được sửa CẢ CỤM nhiều từ liền nhau (kể cả từ ngoài ngoặc) khi chúng đọc gần giống một cụm quen thuộc của ngữ cảnh: \
+tên đồ vật, sản phẩm, đơn vị, địa điểm, thao tác của app (ví dụ "tai nghe bờ lu tút" -> "tai nghe bluetooth", \
+"sang chín mươi lăm" -> "xăng chín mươi lăm").
+4. Từ tiếng Anh, tên thương hiệu, đơn vị, viết tắt bị ASR phiên âm sai thì viết lại dạng chuẩn, chữ thường \
+(bluetooth, laptop, voucher, sms, zalo, sjc, wifi).
+5. Tên người, tên riêng: chỉ đổi khi một ứng viên rõ ràng là tên; không tự bịa tên mới.
+6. Kiểm tra lại cả câu sau khi sửa: đọc như một yêu cầu thật gửi trợ lý ảo. Nếu còn chỗ vô nghĩa, lạc ngữ cảnh hoặc \
+không ai nói như vậy (sai cụm từ, sai đồ vật, sai thao tác, sai đơn vị) thì sửa tiếp chỗ đó, KỂ CẢ khi không được \
+đánh dấu, bằng từ/cụm ĐỌC GẦN GIỐNG làm câu hợp lý (ví dụ "nhà thúc" -> "nhà thuốc", "đặt lịch cắt tốc" -> \
+"đặt lịch cắt tóc"). Chỉ sửa chỗ sai, phần câu đã hợp lý thì giữ nguyên.
+
+Ràng buộc:
+- Không thêm, bớt hay đổi ý; số từ gần như giữ nguyên; giữ từ đệm/từ địa phương (nhé, nha, ạ, ờ, à, nghen, hông, rứa).
+- Giữ con số, giờ, ngày, số tiền đúng như người dùng nói; số viết bằng chữ (hai mươi lăm, không viết 25).
+- Viết chữ thường, không dấu câu, bỏ hết dấu ngoặc [ ] và dấu |.
+
+Ngôn ngữ (bắt buộc):
+- Suy nghĩ và trả lời HOÀN TOÀN bằng tiếng Việt. KHÔNG dịch câu sang tiếng Anh, không suy luận bằng tiếng Anh, \
+không viết bước suy luận, không dùng thẻ <think>.
+- Chọn từ theo ÂM ĐỌC tiếng Việt và ngữ cảnh tiếng Việt, không theo nghĩa khi dịch: hai từ dịch ra tiếng Anh \
+giống nhau không có nghĩa là đọc giống nhau.
+- Chỉ trả về MỘT dòng tiếng Việt là câu đã sửa, không giải thích, không thêm bản dịch."""
+
+NO_THINK = {"enable_thinking": False}
+
+# ví dụ tự đặt (KHÔNG lấy từ public test): chọn ứng viên, sửa cả cụm, giữ nguyên khi không chắc
+REFINE_SHOTS = [
+    ("đổ [sang|xăng|săng] chín mươi lăm hai trăm nghìn rồi [nhắng|nhắn] cho vợ anh [nha|na]",
+     "đổ xăng chín mươi lăm hai trăm nghìn rồi nhắn cho vợ anh nha"),
+    ("đặt giúp em cái [tay|tai|tây] nghe [bu|bờ|bù] lu tút loại [dưới|giới|rưới] năm trăm nghìn",
+     "đặt giúp em cái tai nghe bluetooth loại dưới năm trăm nghìn"),
+    ("tám giờ sáng mai nhắc anh đi lấy [hộ|hồ|họ] [chiếu|chíu|triều] ở [phường|phương|thường] nhé",
+     "tám giờ sáng mai nhắc anh đi lấy hộ chiếu ở phường nhé"),
+    ("chuyển cho [la|lan|nan] ba trăm nghìn [cua|qua|quá] [dí|ví] [điện|đến] tử",
+     "chuyển cho lan ba trăm nghìn qua ví điện tử"),
+    ("mười giờ sáng mai nhắc anh ghé nhà thúc gần công ty mua [vỉ|vĩ|ví] thuốc [đau|đâu] đầu",
+     "mười giờ sáng mai nhắc anh ghé nhà thuốc gần công ty mua vỉ thuốc đau đầu"),
+]
 
 
 def refine_conv(marked, context=()):
     user = marked if not context else "Các câu trước (chỉ để tham khảo):\n" + "\n".join(context) + "\n\nCâu cần sửa:\n" + marked
-    return [{"role": "system", "content": REFINE_SYSTEM}, {"role": "user", "content": user}]
+    shots = [m for q, a in REFINE_SHOTS for m in ({"role": "user", "content": q}, {"role": "assistant", "content": a})]
+    return [{"role": "system", "content": REFINE_SYSTEM}, *shots, {"role": "user", "content": user}]
 
 
 def accept_refine(raw, out):
     """LLM trả về rác / viết lại cả câu -> giữ câu ASR. Chấp nhận khi số từ lệch ít và phần lớn từ còn giữ."""
-    out = (out or "").strip().splitlines()[0].strip().lower() if (out or "").strip() else ""
+    out = re.sub(r"<think>.*?(</think>|$)", "", out or "", flags=re.S).strip()  # Qwen3 thinking -> bỏ phần suy luận
+    out = out.splitlines()[0].strip().lower() if out else ""
     out = out.strip(" .\"'")
     if not out or "[" in out:
         return raw
@@ -122,6 +167,10 @@ def refine(llm, word_lists, cands, thr=0.6, k=3, use_context=True, keep=frozense
     texts = list(raws)
     if idx and llm is not None:
         convs = [refine_conv(marked[i][0], raws[max(0, i - 2):i] if use_context else ()) for i in idx]
-        for i, out in zip(idx, llm.chat(convs)):
+        try:  # tắt thinking cho refine (planner dùng chung LLM có thể đang bật) -> không suy luận / dịch sang tiếng Anh
+            outs = llm.chat(convs, chat_kwargs=NO_THINK)
+        except TypeError:  # LLM không nhận chat_kwargs
+            outs = llm.chat(convs)
+        for i, out in zip(idx, outs):
             texts[i] = accept_refine(raws[i], out)
     return texts, [m for m, _ in marked]

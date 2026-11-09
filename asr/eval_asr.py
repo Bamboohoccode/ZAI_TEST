@@ -51,7 +51,7 @@ def main():
     ap.add_argument("--subset", choices=["heldout", "trainsplit", "all"], default="heldout")
     ap.add_argument("--n", type=int, default=0, help="giới hạn số câu (0 = hết)")
     ap.add_argument("--configs", default="greedy,beam,hw")
-    ap.add_argument("--zipformer", default="hynt/Zipformer-30M-RNNT-6000h")
+    ap.add_argument("--zipformer", default="hynt/ZipFormer-150M-CR-CTC-RNNT-6000h")
     ap.add_argument("--int8", action="store_true")
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--beam", type=int, default=4)

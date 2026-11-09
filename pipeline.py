@@ -1,13 +1,13 @@
-"""Voice agent: Zipformer ASR (+RNNLM) -> đánh dấu từ conf thấp -> LLM refine -> ITN -> Qwen3-0.6B dialect mapper
+"""Voice agent: Zipformer ASR (+RNNLM) -> đánh dấu từ conf thấp -> LLM refine -> Qwen3-0.6B dialect mapper
 -> Qwen3-4B planner <-> verifier -> zaic_tools. Sơ đồ: docs/asr_workflow.png, chi tiết: docs/PIPELINE.md.
 
 pip install -r requirements.txt     # cần asr_assets.zip (lm/rnnlm/rnnlm.onnx, data/asr_train_plain.jsonl) giải nén ở gốc repo
 
 python pipeline.py --root DATA --split public_test --lm lm/rnnlm/rnnlm.onnx --lm-scale 0.3 [--beam 8] [--vad] [--bias] \
-    --conf-thr 0.6 --itn ITN_CKPT --out submission.jsonl                              # full pipeline
+    --conf-thr 0.6 --out submission.jsonl                              # full pipeline
 python pipeline.py --root DATA --split train --lm lm/rnnlm/rnnlm.onnx --mark-only --limit 300
     # chỉ đánh dấu (không LLM, không GPU): in WER + bảng chọn --conf-thr (tỉ lệ đánh dấu / bắt được lỗi / precision)
-python pipeline.py --root DATA --split train --lm lm/rnnlm/rnnlm.onnx --no-llm --limit 200   # ASR -> refine -> ITN, in WER
+python pipeline.py --root DATA --split train --lm lm/rnnlm/rnnlm.onnx --no-llm --limit 200   # ASR -> refine, in WER
 python pipeline.py --root DATA --split train --text --llm gold --mapper none --limit 50   # bỏ ASR, replay nhãn, không GPU
 """
 import argparse
@@ -23,10 +23,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hotwords.bias import app_pools, build_lexicon, snap_value, tokens  # noqa: E402
+from hotwords.bias import add_to_pool, app_pools, build_lexicon, snap_value, tokens  # noqa: E402
 from asr.candidates import Candidates, refine  # noqa: E402
 
-ZIPFORMER_MODEL = "hynt/Zipformer-30M-RNNT-6000h"
+ZIPFORMER_MODEL = "hynt/ZipFormer-150M-CR-CTC-RNNT-6000h"
 MAPPER_MODEL = "Qwen/Qwen3-0.6B"
 LLM_MODEL = "Qwen/Qwen3-4B-Instruct-2507"
 MAX_CTX = 16384
@@ -225,8 +225,9 @@ class VLLM:
                                             **(self.kw or {}))
         return len(self.tok.encode(text, add_special_tokens=False))
 
-    def chat(self, convs, tools=None):
-        outs = self.llm.chat(convs, self.sp, tools=tools, chat_template_kwargs=self.kw,
+    def chat(self, convs, tools=None, chat_kwargs=None):
+        """chat_kwargs: ghi đè chat_template_kwargs cho lần gọi này (refine ASR tắt thinking dù planner bật)."""
+        outs = self.llm.chat(convs, self.sp, tools=tools, chat_template_kwargs=chat_kwargs or self.kw,
                              lora_request=self.lora, use_tqdm=False)
         return [o.outputs[0].text.strip() for o in outs]
 
@@ -284,190 +285,36 @@ class GoldLLM:
         return [f"<tool_call>{json.dumps(self.queue.pop(0), ensure_ascii=False)}</tool_call>"]
 
 
-def load_itn(folder_path, device="cpu", code_dir=None):
-    """Load the bert2BERT inverse-text-normalization model trained by ITN/main.py (checkpoint folder with
-    config.json + model.safetensors). Returns itn(text) -> text, e.g. 'ngày chín tháng một' -> 'ngày 9/1'.
-    code_dir: the ITN folder holding model.py and model_config.py (default: ITN/ next to this script).
-    Same tag-then-generate decoding as ITN/infer.py."""
-    import torch
-    from safetensors.torch import load_file
-    from transformers import GenerationConfig
-    itn_dir = Path(code_dir) if code_dir else Path(__file__).resolve().parent / "ITN"
-    if not ((itn_dir / "model.py").exists() and (itn_dir / "model_config.py").exists()):
-        raise FileNotFoundError(f"ITN code (model.py, model_config.py) not found in {itn_dir}; pass --itn-code")
-    sys.path.insert(0, str(itn_dir))  # ITN modules import each other as top-level names (model, model_config)
-    try:
-        import model as itn_model  # makes ./cache in the cwd
-        from model_config import InvertTextNormalizationConfig
-    finally:
-        sys.path.remove(str(itn_dir))
-    tokenizer = itn_model.init_tokenizer()
-    # Not from_pretrained: transformers 5.x crashes in mark_tied_weights_as_initialized for the custom decoder.
-    net = itn_model.InvertTextNormalization(InvertTextNormalizationConfig.from_pretrained(folder_path))
-    net.load_state_dict(load_file(os.path.join(folder_path, "model.safetensors")), strict=False)
-    net.tie_weights()  # lm_head is tied to the embeddings and absent from the checkpoint
-    try:
-        net.generation_config = GenerationConfig.from_pretrained(folder_path)
-    except OSError:
-        net.generation_config.max_length = 200
-        net.generation_config.no_repeat_ngram_size = 3
-    net = net.to(device).eval()
-
-    def enc(s):
-        e = tokenizer([s])
-        return {"input_ids": torch.tensor(e["input_ids"], device=device),
-                "attention_mask": torch.tensor(e["attention_mask"], device=device)}
-
-    @torch.no_grad()
-    def itn(text):
-        words = text.split()
-        if not words:
-            return text
-        tags = net.spoken_tagging_classifier(net.dropout(net.encoder(**enc(text))[0]))
-        tags = torch.argmax(tags, dim=-1).tolist()[0][1:-1]  # drop <bos>/<eos> labels
-        out, span = [], ""
-
-        def flush():
-            if span:
-                gen = net.generate(**enc(span), num_beams=1, num_return_sequences=1)
-                out.append(tokenizer.decode(gen[0].tolist(), skip_special_tokens=True))
-
-        for i, w in enumerate(words):
-            tag = tags[i] if i < len(tags) else 0  # 0 = keep as is, 1 = starts a spoken span, else continues it
-            if tag in (0, 1):
-                flush()
-                span = w if tag == 1 else ""
-                if tag == 0:
-                    out.append(w)
-            else:
-                span = f"{span} {w}".strip()
-        flush()
-        return " ".join(out)
-
-    return itn
-
-
-def run_asr(model, paths, hotwords=None):
-    """Decode one sample's files (history turns + query) in one batched call (deterministic).
-    Zipformer RNNT (+RNNLM); `hotwords` bias the decoding when built with bias=True. -> [[(word, confidence)]] per file."""
-    return model.transcribe([str(p) for p in paths], hotwords=hotwords, words=True)
-
-
-# ---------------------------------------------------------------- agent
-
-
-def plan_step(llm, msgs, tools, trace, rounds, deadline):
-    """Planner proposes the next calls; verifier ACCEPTs or REJECTs with a reason, at most `rounds` times."""
-    query = msgs[-1]["content"] if msgs[-1]["role"] == "user" else next(m["content"] for m in reversed(msgs) if m["role"] == "user")
-    feedback = []
-    for attempt in range(rounds + 1):
-        out = llm.chat([msgs + feedback], tools)[0]
-        trace.append({"plan": out})
-        calls = parse_calls(out)
-        if not calls or attempt == rounds or time.time() > deadline:  # nothing to check, past N rejects, or out of time: run the last plan
-            return out, calls
-        shown = "\n".join(f"<tool_call>{json.dumps(c, ensure_ascii=False)}</tool_call>" for c in calls)
-        verdict = llm.chat([msgs + [{"role": "user", "content": VERIFY.format(query=query, calls=shown, text=re.sub(r"<tool_call>.*?</tool_call>", "", out, flags=re.S).strip())}]], tools)[0]
-        ok, reason = parse_verdict(verdict)
-        trace.append({"verify": verdict})
-        if ok:
-            return out, calls
-        feedback = [{"role": "assistant", "content": out}, {"role": "user", "content": REPLAN.format(reason=reason)}]
-
-
-# search keys: the string arguments that must name an entity of the user's own data (contact, channel, room...)
-SEARCH_KEYS = {"contacts.search": "query", "tv.guide": "channel", "tv.tune": "channel", "loyalty.list_vouchers": "merchant",
-               "loyalty.get_points": "program", "loyalty.redeem": "program", "household_chores.assign": "assignee",
-               "smart_home.get_status": "room", "podcast_radio.play": "station"}
-
-
-def snap_search_keys(call, pools, trace):
-    """Search-key biasing: snap the entity argument of a tool call to the closest name in that app's state (by sound)."""
-    k = SEARCH_KEYS.get(call["name"])
-    pool = pools.get(call["name"].split(".")[0])
-    old = call["arguments"].get(k)
-    if k and pool and isinstance(old, str):
-        new = snap_value(old, pool)
-        if new != old:
-            call["arguments"][k] = new
-            trace.append({"snap": {"tool": call["name"], "arg": k, "from": old, "to": new}})
-
-
-def run_agent(env, llm, msgs, tools, catalog, trace, rounds=VERIFY_ROUNDS, deadline=float("inf"), pools=None):
-    done = set()
-    for _ in range(MAX_STEPS):
-        if time.time() > deadline:  # keep the calls that already ran
-            trace.append({"error": "time limit"})
-            return
-        out, calls = plan_step(llm, msgs, tools, trace, rounds, deadline)
-        if not calls:
-            return
-        ai = len(msgs)
-        msgs.append(assistant_msg(re.sub(r"<tool_call>.*?</tool_call>", "", out, flags=re.S).strip(), calls))
-        stop = False
-        for c in calls:
-            if pools:
-                snap_search_keys(c, pools, trace)
-            key = json.dumps(c, sort_keys=True, ensure_ascii=False)
-            v = env.validate(c["name"], c["arguments"])  # not logged: invalid calls never reach the submission
-            # the planner's own message is excluded: it would make every invented ID look seen
-            bad = v.get("ok") and unseen_ids(c, catalog, msgs[:ai] + msgs[ai + 1:])
-            if not v.get("ok"):
-                r = {"ok": False, "error": v.get("error"), "note": "Chưa thực thi, hãy sửa tham số."}
-            elif bad:  # a made-up ID runs as a silent no-op and breaks the state
-                r = {"ok": False, "error": f"Giá trị {bad} chưa xuất hiện trong kết quả tool nào, không được tự đặt ID.",
-                     "note": "Chưa thực thi. Gọi tool đọc để lấy ID, hoặc sys.ask_missing_info nếu không lấy được."}
-            elif key in done and catalog[c["name"]]["kind"] == "read":  # repeated writes can be legit
-                r = {"ok": False, "error": "Đã gọi tool đọc này với cùng tham số, dùng lại kết quả trước."}
-            else:
-                r = env.call(c["name"], c["arguments"])
-                done.add(key)
-                stop |= c["name"] == "sys.ask_missing_info"
-            msgs.append({"role": "tool", "content": clip(r)})
-        if stop:
-            return
-
-
-THR_SWEEP = (0.4, 0.5, 0.6, 0.7, 0.8)
-
-
-def hotword_words(lex):
-    """từ (viết thường) của các hotword --bias: không đánh dấu cho LLM sửa (xem Candidates.mark)."""
-    return frozenset(t for e in lex for t in tokens(e))
-
-
-def run_audio_only(a, items, asr, itn, t_start, llm=None, cands=None):
-    """--no-llm / --mark-only: VAD/ASR(+LM) -> đánh dấu conf thấp -> [LLM refine] -> ITN cho mọi lượt user,
-    không mapper/planner/tool. Mỗi dòng --out: {"id", "turns": [{"turn", "audio", "asr", "marked", "refine", "itn", ["ref"]}]}.
-    Split có audio_text (train): in WER (asr thô / sau refine / sau ITN) và bảng chọn --conf-thr: với mỗi ngưỡng,
+def run_audio_only(a, items, asr, t_start, llm=None, cands=None):
+    """--no-llm / --mark-only: VAD/ASR(+LM) -> đánh dấu conf thấp -> [LLM refine] cho mọi lượt user (không ITN: số giữ dạng chữ),
+    không mapper/planner/tool. Mỗi dòng --out: {"id", "turns": [{"turn", "audio", "asr", "marked", "refine", ["ref"]}]}.
+    Split có audio_text (train): in WER (asr thô / sau refine) và bảng chọn --conf-thr: với mỗi ngưỡng,
     % từ bị đánh dấu, % từ sai bắt được, precision (từ sai căn theo hyp <-> ref dạng đọc)."""
     import difflib
     from textnorm.textutil import norm, wer_counts
     from textnorm.vi_num import to_spoken
     root = Path(a.root)
-    tot = {"asr": [0, 0], "refine": [0, 0], "itn": [0, 0]}
+    tot = {"asr": [0, 0], "refine": [0, 0]}
     sweep = {t: [0, 0] for t in THR_SWEEP}  # thr -> [marked, marked & sai]
     n_words = n_wrong = n_sure = 0
     with open(a.out, "w", encoding="utf-8") as fout:
         for i, item in enumerate(items):
             t0 = time.time()
             turns = [h for h in item["history"] if h["role"] == "user"] + [item]
-            lex = build_lexicon(root / a.split / f"{a.split}_environment" / item["id"] / "state.json", item["context"]) if a.bias else []
+            lex = build_lexicon(item) if a.bias else []
             wls = run_asr(asr, [root / a.split / u["audio"] for u in turns], lex or None)
             asr_out = [" ".join(w for w, _ in wl) for wl in wls]
             keep = hotword_words(lex)
             fix, marked = refine(llm, wls, cands, a.conf_thr, a.cand_k, keep=keep)
-            itn_out = [itn(r) or r for r in fix] if itn else fix
             rows = []
-            for k, (u, wl, r0, r1, r2, r3) in enumerate(zip(turns, wls, asr_out, marked, fix, itn_out)):
+            for k, (u, wl, r0, r1, r2) in enumerate(zip(turns, wls, asr_out, marked, fix)):
                 row = {"turn": "QUERY" if k == len(turns) - 1 else f"u{k + 1}", "audio": u["audio"], "asr": r0,
-                       "marked": r1, "refine": r2, "itn": r3}
+                       "marked": r1, "refine": r2}
                 if u.get("audio_text"):
                     ref = u["audio_text"]
                     row["ref"] = ref
                     for key, hyp, rf in (("asr", norm(r0), to_spoken(ref, norm(r0)) or norm(ref)),
-                                         ("refine", norm(r2), to_spoken(ref, norm(r2)) or norm(ref)),
-                                         ("itn", norm(r3), norm(ref))):
+                                         ("refine", norm(r2), to_spoken(ref, norm(r2)) or norm(ref))):
                         e, n = wer_counts(rf, hyp)
                         tot[key][0] += e
                         tot[key][1] += n
@@ -485,15 +332,13 @@ def run_audio_only(a, items, asr, itn, t_start, llm=None, cands=None):
             fout.write(json.dumps({"id": item["id"], "turns": rows}, ensure_ascii=False) + "\n")
             n_mark = sum("[" in m for m in marked)
             print(f"[{i + 1}/{len(items)}] {item['id']} {len(rows)} lượt, đánh dấu {n_mark} "
-                  f"{time.time() - t0:.1f}s | {rows[-1]['itn'][:90]}", flush=True)
+                  f"{time.time() - t0:.1f}s | {rows[-1]['marked' if llm is None else 'refine'][:120]}", flush=True)
     total = time.time() - t_start
     print(f"\n{len(items)} samples -> {a.out} | avg {total / max(len(items), 1):.1f}s/sample")
     if tot["asr"][1]:
         print(f"WER dạng đọc, ASR thô        : {tot['asr'][0] / tot['asr'][1]:.4f}")
         if llm is not None:
             print(f"WER dạng đọc, sau LLM refine : {tot['refine'][0] / tot['refine'][1]:.4f}")
-        if itn:
-            print(f"WER dạng viết (sau ITN)      : {tot['itn'][0] / tot['itn'][1]:.4f}")
     if n_words:
         if n_sure == n_words:
             print("CẢNH BÁO: mọi từ có conf = 1 -> sherpa-onnx không trả ys_log_probs, refine sẽ không đánh dấu gì")
@@ -511,7 +356,7 @@ def main():
     ap.add_argument("--zipformer", default=ZIPFORMER_MODEL, help="Zipformer HF id or local (fine-tuned) folder (sherpa-onnx files)")
     ap.add_argument("--zipformer-threads", type=int, default=4)
     ap.add_argument("--bias", action="store_true",
-                    help="hotword theo từng mẫu: lexicon từ state.json của mẫu -> Zipformer hotwords")
+                    help="hotword theo từng mẫu: lexicon từ item (user_profile + tool call/kết quả trong history) -> Zipformer hotwords")
     ap.add_argument("--hotword-score", type=float, default=2.0, help="score khởi tạo contextual graph (hotword thật dùng --hotword-hi/lo)")
     ap.add_argument("--hotword-hi", type=float, default=2.5, help="hotword score cho tên riêng / viết tắt")
     ap.add_argument("--hotword-lo", type=float, default=1.5, help="hotword score cho cụm thường (đèn bếp, tài khoản thanh toán)")
@@ -527,9 +372,6 @@ def main():
     ap.add_argument("--cand-k", type=int, default=3, help="số ứng viên mỗi từ")
     ap.add_argument("--cand-train", default=str(Path(__file__).resolve().parent / "data" / "asr_train_plain.jsonl"),
                     help="jsonl có hyp + ref_spoken (asr/eval_asr.py --dump, bước A) để học bảng nhầm lẫn và từ vựng")
-    ap.add_argument("--itn", help="folder of the ITN checkpoint trained by ITN/main.py; runs on ASR text before the mapper")
-    ap.add_argument("--itn-code", help="ITN folder with model.py + model_config.py (default: ITN/ next to pipeline.py)")
-    ap.add_argument("--itn-device", default="cuda:0")
     ap.add_argument("--mapper", default=MAPPER_MODEL, help='HF id or local folder, "none" = off')
     ap.add_argument("--mapper-lora")
     ap.add_argument("--mapper-device", help="GPU index for the mapper, run in its own process (default: share the LLM's GPU)")
@@ -541,7 +383,7 @@ def main():
     ap.add_argument("--verify-rounds", type=int, default=VERIFY_ROUNDS)
     ap.add_argument("--text", action="store_true", help="use audio_text instead of ASR (train only)")
     ap.add_argument("--no-llm", action="store_true",
-                    help="chỉ chạy phần xử lý âm thanh (VAD/ASR -> refine -> ITN), không mapper/planner/tool; "
+                    help="chỉ chạy phần xử lý âm thanh (VAD/ASR -> refine), không mapper/planner/tool; "
                          "ghi text từng bước ra --out (mặc định asr_out.jsonl), split có nhãn -> in WER")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--seed", type=int, default=0)
@@ -584,12 +426,11 @@ def main():
         if not Path(a.cand_train).exists():
             sys.exit(f"thiếu {a.cand_train}: giải nén asr_assets.zip (bước E) hoặc chạy asr/eval_asr.py --dump (bước A)")
         cands = Candidates.from_train(a.cand_train)
-    itn = load_itn(a.itn, a.itn_device, a.itn_code) if a.itn else None
     if a.no_llm:
         if a.text:
             sys.exit("--no-llm / --mark-only cần ASR, không dùng với --text")
         llm = None if gold or a.mark_only else VLLM(a.llm, a.llm_lora, a.gpu_mem, a.seed, 4096, 256, {"enable_thinking": False}, a.eager)
-        return run_audio_only(a, items, asr, itn, t_start, llm, cands)
+        return run_audio_only(a, items, asr, t_start, llm, cands)
     m_args = (a.mapper, a.mapper_lora, a.mapper_gpu_mem, a.seed, 2048, 256, {"enable_thinking": False}, a.eager)
     mapper = None if a.mapper == "none" or gold else RemoteVLLM(a.mapper_device, *m_args) if a.mapper_device else VLLM(*m_args)
     llm = GoldLLM() if gold else VLLM(a.llm, a.llm_lora, a.gpu_mem, a.seed, MAX_CTX, MAX_NEW, None, a.eager)
@@ -602,18 +443,16 @@ def main():
             try:
                 # 1. ASR of every user turn: history first, then the query, in one batch
                 turns = [h for h in item["history"] if h["role"] == "user"] + [item]
-                state = root / a.split / f"{a.split}_environment" / item["id"] / "state.json"
-                pools = app_pools(state)  # snap_search_keys: tên trong tool call -> tên có thật trong app
+                pools = app_pools(item)  # snap_search_keys: tên trong tool call -> tên đã thấy trong history / kết quả tool
                 if a.text:
                     raw = [u["audio_text"] for u in turns]
                 else:  # ASR(+LM) -> đánh dấu từ conf thấp + ứng viên -> LLM sửa
-                    lex = build_lexicon(state, item["context"]) if a.bias else []
+                    lex = build_lexicon(item) if a.bias else []
                     wls = run_asr(asr, [root / a.split / u["audio"] for u in turns], lex or None)
                     raw, marked = refine(None if gold else llm, wls, cands, a.conf_thr, a.cand_k, keep=hotword_words(lex))
                     trace.extend({"refine": {"marked": m, "to": t}} for m, t in zip(marked, raw) if "[" in m)
-                # 2. ITN (spoken -> written numbers/dates), then dialect mapper; empty output keeps the previous text
-                itn_out = [itn(r) or r for r in raw] if itn else raw
-                texts = [m or r for r, m in zip(itn_out, mapper.chat([mapper_conv(r) for r in itn_out]))] if mapper else itn_out
+                # 2. dialect mapper (không ITN: số giữ dạng chữ, planner tự đổi sang tham số); output rỗng -> giữ câu cũ
+                texts = [m or r for r, m in zip(raw, mapper.chat([mapper_conv(r) for r in raw]))] if mapper else raw
                 # 3-5. planner <-> verifier -> executor
                 tools = tool_specs(item, catalog)
                 keep = len(texts) - 1

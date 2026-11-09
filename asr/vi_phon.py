@@ -85,7 +85,7 @@ def _pairs(groups, cost):
 
 # chi phí khi khác nhau; thiếu trong bảng = 1.0
 ONSET_COST = {**_pairs([("d", "r", "v"), ("ch", "tr"), ("s", "x"), ("l", "n")], 0.2),
-              **_pairs([("kh", "ph"), ("t", "th"), ("đ", "t"), ("n", "nh"), ("d", "nh"), ("h", "kh"), ("h", ""),
+              **_pairs([("kh", "ph"), ("t", "th"), ("đ", "t"), ("n", "nh"), ("h", "kh"), ("h", ""),
                         ("v", "b"), ("g", "ng"), ("h", "qu")], 0.5)}
 MEDIAL_COST = 0.3
 NUCLEUS_COST = {**_pairs([("ă", "â", "ơ"), ("iê", "i"), ("ươ", "ư"), ("uô", "u"), ("o", "ô"), ("ơ", "ươ"), ("ê", "e"),

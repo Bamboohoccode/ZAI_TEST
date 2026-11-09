@@ -1,7 +1,8 @@
 """Search-key / contextual biasing for ASR output.
 
-Từ khoá (entity) lấy từ chính dữ liệu app của mẫu (<split>_environment/<id>/state.json: danh bạ, lịch, nhạc, nhà hàng,
-kênh TV, thiết bị...) + hồ sơ user + một glossary nhỏ (Zalo, SMS, SJC, email...). Dùng ở 2 chỗ:
+Từ khoá (entity) CHỈ lấy từ item của file <split>.jsonl: hồ sơ user (context.user_profile) + tham số / kết quả các tool
+call trong history (danh bạ, lịch, nhạc... mà các lượt trước đã đọc) + một glossary nhỏ (Zalo, SMS, SJC, email...).
+KHÔNG đọc <split>_environment/<id>/state.json (chỉ ToolEnv được nạp file đó). Dùng ở 2 chỗ:
 
   1. hotword_lines(): hotword cho Zipformer/sherpa-onnx (biasing lúc decode, modified_beam_search), pipeline.py --bias.
   2. snap_value(): "search key" của tool call (contacts.search query, tv.tune channel...) -> entity gần nhất (snap_search_keys).
@@ -16,7 +17,7 @@ from collections import Counter
 from difflib import SequenceMatcher
 from pathlib import Path
 
-# key trong state.json mà giá trị là thứ người dùng có thể nhắc tên
+# key (trong tham số / kết quả tool) mà giá trị là thứ người dùng có thể nhắc tên
 ENTITY_KEYS = {"name", "title", "artist", "provider", "location", "label", "room", "channel", "merchant", "program",
                "station", "assignee", "restaurant", "dish", "item", "brand", "album", "show", "city", "address"}
 PROFILE_KEYS = ("name", "home_address", "work_address", "city")
@@ -77,12 +78,30 @@ def _walk(o, out, parent_key=""):
             _walk(v, out, parent_key)
 
 
-def build_lexicon(state_path=None, context=None, glossary=GLOSSARY):
-    """list[str] entity, bỏ trùng, giữ thứ tự (entity dài trước ưu tiên khi snap)."""
+def _history_calls(item):
+    """[(tool name, arguments, result)] của các tool call trong history của item (kết quả có thể thiếu -> {})."""
+    out = []
+    for h in (item or {}).get("history") or []:
+        calls = h.get("tool_calls") or []
+        results = h.get("tool_results") or []
+        for i, c in enumerate(calls):
+            args = c.get("arguments")
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except ValueError:
+                    args = {}
+            out.append((c.get("name", ""), args or {}, results[i] if i < len(results) else {}))
+    return out
+
+
+def build_lexicon(item=None, glossary=GLOSSARY):
+    """list[str] entity từ item (user_profile + tool call / kết quả trong history) + glossary, bỏ trùng, giữ thứ tự."""
     ents = []
-    if state_path and Path(state_path).exists():
-        _walk(json.load(open(state_path, encoding="utf-8")), ents)
-    prof = (context or {}).get("user_profile") or {}
+    for _, args, res in _history_calls(item):
+        _walk(args, ents)
+        _walk(res, ents)
+    prof = ((item or {}).get("context") or {}).get("user_profile") or {}
     ents += [prof[k] for k in PROFILE_KEYS if isinstance(prof.get(k), str)]
     ents += glossary
     seen, out = set(), []
@@ -95,16 +114,24 @@ def build_lexicon(state_path=None, context=None, glossary=GLOSSARY):
     return out
 
 
-def app_pools(state_path):
-    """{app: [entity,...]} từ state.json: dùng để snap search key của tool về đúng tên trong app đó (contacts -> danh bạ)."""
-    if not state_path or not Path(state_path).exists():
-        return {}
+def add_to_pool(pools, tool_name, *objs):
+    """thêm entity trong tham số / kết quả của một tool call vào pools[app] (app = tiền tố tên tool)."""
+    ents = []
+    for o in objs:
+        _walk(o, ents)
+    pool = pools.setdefault(tool_name.split(".")[0], [])
+    for e in (" ".join(str(e).split()) for e in ents):
+        if e and e not in pool:
+            pool.append(e)
+    return pools
+
+
+def app_pools(item):
+    """{app: [entity,...]} từ các tool call / kết quả trong history của item: snap search key của tool về tên đã thấy.
+    run_agent bổ sung thêm từ kết quả các tool call mới (add_to_pool)."""
     pools = {}
-    for app, data in json.load(open(state_path, encoding="utf-8")).items():
-        if app != "_meta":
-            ents = []
-            _walk(data, ents)
-            pools[app] = list(dict.fromkeys(" ".join(e.split()) for e in ents if e.strip()))
+    for name, args, res in _history_calls(item):
+        add_to_pool(pools, name, args, res)
     return pools
 
 

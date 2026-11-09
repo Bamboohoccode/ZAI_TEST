@@ -119,7 +119,7 @@ Planner ──plan──► Verifier ──REJECT + lý do──► Planner   (r
 Audio ─► [VAD] ─► Zipformer (+RNNLM, [hotword]) ─► [(từ, conf)] ─► đánh dấu conf < ngưỡng + ứng viên ─► LLM sửa ─► ITN ─► mapper ─► planner
 ```
 
-Zipformer là `hynt/Zipformer-30M-RNNT-6000h` chạy bằng sherpa-onnx (`asr/asr_zipformer.py`), hoặc bản fine-tune qua `--zipformer <thư mục>`.
+Zipformer là `hynt/ZipFormer-150M-CR-CTC-RNNT-6000h` chạy bằng sherpa-onnx (`asr/asr_zipformer.py`), hoặc bản fine-tune qua `--zipformer <thư mục>`.
 
 ### 4.1 Chuẩn bị trên Kaggle (`notebooks/kaggle_hotwords_lm.ipynb`)
 
@@ -148,7 +148,7 @@ Zipformer là `hynt/Zipformer-30M-RNNT-6000h` chạy bằng sherpa-onnx (`asr/as
 6. **Snap search key** (`snap_search_keys`, `SEARCH_KEYS`): trước khi gọi tool, tham số tên (`contacts.search`,
    `tv.*`...) được đổi về tên có thật trong app của mẫu (theo phát âm). Ghi trong trace (`snap`).
 
-Tham số: `--conf-thr` (mặc định 0.6), `--cand-k` (mặc định 3), `--bias` (hotword theo state.json của mẫu),
+Tham số: `--conf-thr` (mặc định 0.6), `--cand-k` (mặc định 3), `--bias` (hotword từ user_profile + tool call/kết quả trong history của item, không đọc state.json),
 `--hotwords-file` (hotword cố định từ bước B), `--vad`, `--lm`, `--lm-scale`, `--beam`.
 Trace ghi `{"refine": {"marked", "to"}}`.
 

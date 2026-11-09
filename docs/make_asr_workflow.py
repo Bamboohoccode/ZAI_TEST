@@ -59,7 +59,7 @@ panel(35, 105, 695, 1225, "#1d4ed8", "① Kaggle — notebooks/kaggle_hotwords_l
 A = box(65, 200, 635, 135, "A. Decode train KHÔNG hotword (beam)",
         "asr/eval_asr.py --subset all --configs beam\n--dump data/asr_train_plain.jsonl  (hyp + ref_spoken)", "kaggle")
 B = box(52, 418, 320, 145, "B. (tuỳ chọn) Khai thác hotword",
-        "hotwords/mine_hotwords.py\nlist global dễ chèn tên sai\n→ ưu tiên --bias theo state.json", "kaggle",
+        "hotwords/mine_hotwords.py\nlist global dễ chèn tên sai\n→ ưu tiên --bias theo item (history)", "kaggle",
         mono=False)
 C = box(393, 418, 320, 145, "C. Train RNNLM (GPU)", "lm/train_rnnlm.py\nearly-stop theo held-out", "kaggle")
 down(A, B, 0.28)
