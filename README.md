@@ -5,30 +5,27 @@ Repo dự án **LifeMate** cho Zalo AI Challenge 2026: agent nhận giọng nói
 ## Tài liệu
 
 - [docs/Overview_PJ.md](docs/Overview_PJ.md): tổng quan dự án, pipeline, phân công, cấu trúc repo, rủi ro.
-- [docs/PIPELINE.md](docs/PIPELINE.md): luồng ASR → mapper → planner ↔ verifier → tool; mục 5 là `--refine` (confidence + LLM sửa).
+- [docs/PIPELINE.md](docs/PIPELINE.md): luồng ASR → mapper → planner ↔ verifier → tool; mục 4 là ASR (confidence + LLM refine), sơ đồ `docs/asr_workflow.png`.
 
 ## Cấu trúc
 
 ```
-├── pipeline.py              # entry: ASR -> [refine] -> ITN -> mapper -> planner <-> verifier -> zaic_tools
-├── asr/                     # Zipformer (sherpa-onnx), VAD, luật sửa lỗi, eval/test ASR
+├── pipeline.py              # entry: Zipformer(+LM) -> refine -> ITN -> mapper -> planner <-> verifier -> zaic_tools
+├── asr/                     # Zipformer (sherpa-onnx), VAD, refine, eval ASR
 │   ├── asr_zipformer.py     #   ZipformerASR(hotwords_file=, lm=, vad=) — offline; transcribe(words=True) -> (từ, conf)
-│   ├── candidates.py        #   --refine: đánh dấu từ conf thấp + ứng viên gần âm, prompt LLM sửa
+│   ├── candidates.py        #   đánh dấu từ conf thấp + ứng viên gần âm, prompt LLM sửa
 │   ├── vad.py               #   silero VAD (trim khoảng lặng)
-│   ├── asr_fix.py           #   luật sửa lỗi hệ thống (lịch->dịch, ron...), tắt khi --refine
-│   ├── eval_asr.py          #   WER trên held-out theo cấu hình (greedy/beam/hw/vad/lm/snap/fix)
-│   └── test_asr_public.py   #   in transcript public_test để duyệt
-├── hotwords/                # biasing: hotword cố định + snap
-│   ├── bias.py              #   hotword lines, snap_text / snap_value, load_global
+│   └── eval_asr.py          #   dump train (bước A) + WER held-out theo cấu hình (greedy/beam/hw/vad/lm)
+├── hotwords/                # biasing: hotword + snap search key của tool
+│   ├── bias.py              #   hotword lines, snap_value, phon
 │   ├── mine_hotwords.py     #   khai thác hotword từ lỗi ASR trên train
 │   └── hotwords_global.txt/.json
 ├── lm/train_rnnlm.py        # RNNLM cho LM fusion -> lm/rnnlm/rnnlm.onnx
 ├── textnorm/                # dùng chung: norm, WER, đọc số tiếng Việt (vi_num)
-├── mapper/                  # seq2seq mapper (ViT5/BARTpho), tn_agy.py (TN bằng LLM, chỉ dùng lúc chuẩn bị dữ liệu)
 ├── ITN/                     # inverse text normalization (bert2BERT)
-├── notebooks/               # fine-tune Zipformer / mapper, Kaggle hotword + RNNLM
+├── notebooks/               # fine-tune Zipformer, Kaggle hotword + RNNLM (bước A–E)
 ├── docs/
-└── data/                    # không commit: dữ liệu BTC và jsonl sinh ra (asr_train*.jsonl...)
+└── data/                    # không commit: dữ liệu BTC và asr_train_plain.jsonl (từ asr_assets.zip)
 ```
 
 Chạy mọi lệnh từ gốc repo, ví dụ `python asr/eval_asr.py ...`, `python hotwords/mine_hotwords.py`,

@@ -2,7 +2,7 @@
 
     python hotwords/mine_hotwords.py --in data/asr_train_plain.jsonl --train-jsonl DATA/train/train.jsonl
         -> hotwords/hotwords_global.txt  (dòng "CỤM TỪ :score", chữ HOA cho vocab BPE; nạp 1 lần lúc khởi tạo ASR)
-        -> hotwords/hotwords_global.json (thống kê từng cụm: n_occ, n_err, err_rate, ASR nghe ra gì, alias để snap_text)
+        -> hotwords/hotwords_global.json (thống kê từng cụm: n_occ, n_err, err_rate, ASR nghe ra gì, alias)
 
 Cách làm:
   1. ref -> dạng đọc (vi_num.to_spoken, chọn cách đọc số theo hyp). Chỉ dùng phần train-split (id % 10 != 9),
@@ -192,7 +192,7 @@ def main():
             continue
         cap = a.name_max if st["kind"] == "name" and all(_VI_SYL.match(x) for x in words) else a.max_score
         score = round(min(cap, a.base + a.k * rate), 2) if not pattern_only else a.base + 0.5
-        # alias cho snap_text: các cách nghe sai lặp lại >= 2 lần, không phải cụm có thật trong ref
+        # alias: các cách nghe sai lặp lại >= 2 lần, không phải cụm có thật trong ref
         mis = [h for h, c in st["heard"].most_common() if c >= 2 and h and h not in fs and ngrams[h] == 0][:5]
         if sp_model is not None:
             hot = [f for f in hot if 0 not in sp_model.encode(f.upper()) and 2 not in sp_model.encode(f.upper())]

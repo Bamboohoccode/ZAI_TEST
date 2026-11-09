@@ -1,15 +1,13 @@
 """Search-key / contextual biasing for ASR output.
 
 Từ khoá (entity) lấy từ chính dữ liệu app của mẫu (<split>_environment/<id>/state.json: danh bạ, lịch, nhạc, nhà hàng,
-kênh TV, thiết bị...) + hồ sơ user + một glossary nhỏ (Zalo, SMS, SJC, email...). Dùng ở 3 chỗ:
+kênh TV, thiết bị...) + hồ sơ user + một glossary nhỏ (Zalo, SMS, SJC, email...). Dùng ở 2 chỗ:
 
-  1. hotwords(): chuỗi hotword cho Zipformer/sherpa-onnx (biasing lúc decode, modified_beam_search).
-  2. snap_text(): sau ASR, thay đoạn từ nghe gần giống một entity bằng đúng entity ("gia lô" -> "Zalo").
-  3. snap_value(): "search key" của tool call (contacts.search query, maps.search_place query...) -> entity gần nhất.
+  1. hotword_lines(): hotword cho Zipformer/sherpa-onnx (biasing lúc decode, modified_beam_search), pipeline.py --bias.
+  2. snap_value(): "search key" của tool call (contacts.search query, tv.tune channel...) -> entity gần nhất (snap_search_keys).
 
 So khớp theo phát âm: bỏ dấu thanh, gộp các cặp hay nhầm (d/gi/r/z, ch/tr, s/x, c/k/q, l/n đầu âm...), so chuỗi ghép
-không khoảng trắng để bắt lỗi tách/ghép âm tiết. Entity một âm tiết (Lan, Bống...) chỉ được thay cho từ KHÔNG phổ biến
-(common_words), tránh "đá bóng" -> "đá Bống".
+không khoảng trắng để bắt lỗi tách/ghép âm tiết. phon() cũng dùng cho ứng viên gần âm của asr/candidates.py.
 """
 import json
 import re
@@ -111,7 +109,7 @@ def app_pools(state_path):
 
 
 def common_words(jsonl_path, min_count=3):
-    """từ thường (viết thường) hay gặp trong transcript train: entity 1 âm tiết không được đè lên chúng."""
+    """từ thường (viết thường) hay gặp trong transcript train (mine_hotwords.py lọc hotword theo danh sách này)."""
     c = Counter()
     for l in open(jsonl_path, encoding="utf-8"):
         r = json.loads(l)
@@ -146,7 +144,7 @@ def hotword_lines(entities, hi=2.5, lo=1.5, glossary_score=1.0, glossary=GLOSSAR
     return "\n".join(out)
 
 
-# ------------------------------------------------------------------ snapping
+# ------------------------------------------------------------------ search key
 
 LETTERS = {"s": "ét", "m": "em", "j": "gi", "c": "xê", "e": "e", "v": "vê", "n": "en", "q": "quy", "r": "rờ", "a": "a",
            "b": "bê", "d": "dê", "g": "giê", "h": "hát", "i": "i", "k": "ca", "l": "eo", "o": "o", "p": "pê", "t": "tê",
@@ -170,117 +168,6 @@ def _aliases(entities):
 
 _V = "aăâeêioôơuưyáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ"
 _VI_SYL = re.compile(rf"^(ngh|ng|nh|ch|gh|gi|kh|ph|th|tr|qu|[bcdđghklmnpqrstvx])?[{_V}]+(ch|ng|nh|[cmnpt])?$")
-
-
-def _has_run(low, ew):
-    n = len(ew)
-    return any(low[i:i + n] == ew for i in range(len(low) - n + 1))
-
-
-def _covered(win, ew, thr=0.8):
-    """tỉ lệ từ của entity có một từ trong cửa sổ khớp phát âm."""
-    return sum(max(ratio(phon(w), phon(x)) for x in win) >= thr for w in ew) / len(ew)
-
-
-_NUM_WORDS = {"không", "một", "mốt", "hai", "ba", "bốn", "tư", "năm", "lăm", "sáu", "bảy", "tám", "chín", "mười",
-              "mươi", "trăm", "nghìn", "ngàn", "linh", "lẻ", "triệu", "tỷ", "tỉ", "rưỡi"}
-
-
-def _nums(ws):
-    """chuỗi từ chỉ số (lăm = năm): 'htv bảy' vs 'htv ba' khác số -> không được snap (bỏ dấu thì gần như trùng)."""
-    return ["năm" if w == "lăm" else w for w in ws if w in _NUM_WORDS]
-
-
-def _subseq(a, b):
-    """a là dãy con của b: 'ron chính lâm' ([]) / 'ron chín lâm' ([chín]) vẫn snap được về 'ron chín lăm'."""
-    it = iter(b)
-    return all(x in it for x in a)
-
-
-def _dedup(words, rep):
-    """'nhắn sms sms' -> 'nhắn sms': hotword boost hay chèn lặp từ ngoại; chỉ gộp từ trong `rep` (không phải số/từ Việt)."""
-    out = []
-    for w in words:
-        if out and w.lower() == out[-1].lower() and w.lower() in rep:
-            continue
-        out.append(w)
-    return out
-
-
-def snap_text(text, entities, common=frozenset(), thr=0.9, thr_short=0.9, size_penalty=0.04, name_guard=True,
-              aliases=None):
-    """(new_text, changes). Duyệt entity dài trước; mỗi đoạn hyp chỉ bị thay một lần.
-    Bỏ qua entity đã xuất hiện đúng trong câu; entity một âm tiết tiếng Việt (Lan, Bống...) không bao giờ bị snap
-    (dễ đè lên từ thường chỉ khác dấu), chỉ snap entity ngoại / viết tắt / nhiều từ."""
-    als = aliases if aliases is not None else _aliases(entities)
-    words = text.split()
-    low = [re.sub(r"[^\w'-]", "", w.lower()) for w in words]
-    used, changes, repl = [False] * len(words), [], {}
-    for surf, ew, ek, disp in sorted(als, key=lambda a: -len(a[2])):
-        n, best = len(ew), None
-        if len(ek) < 3 or _has_run(low, tokens(disp)):
-            continue
-        if n == 1 and _VI_SYL.match(ew[0]):
-            continue
-        # cụm toàn âm tiết Việt; trừ mã có số hiển thị dạng đọc chữ thường ("ron chín lăm"), còn tên "Anh Mười" vẫn tính
-        all_vi = all(_VI_SYL.match(w) for w in ew) and not (_nums(ew) and disp == disp.lower())
-        # tên người tiếng Việt (Lê Minh, Phạm Hùng): mọi âm tiết là âm tiết Việt viết hoa
-        person = name_guard and n > 1 and all_vi and all(x[:1].isupper() for x in disp.split()[-n:])
-        for size in range(max(1, n - 1), n + 2):
-            for i in range(len(words) - size + 1):
-                if any(used[i:i + size]):
-                    continue
-                win = low[i:i + size]
-                if not _subseq(_nums(win), _nums(ew)):  # "htv bảy" -> "htv ba": không đổi số đã nghe được
-                    continue
-                exact = win == ew
-                # "nhé mình" -> "Lê Minh": cửa sổ toàn từ thường, chỉ khớp nhờ gộp l/n + bỏ dấu -> không phải tên
-                if person and all(w in common for w in win) and strip_tones(" ".join(win)) != strip_tones(" ".join(ew)):
-                    continue
-                # cụm toàn âm tiết Việt (Bến Thành): "bên thanh toán" -> "Bến Thành toán"; chỉ snap khi khớp đúng dấu
-                if all_vi and not exact and all(w in common for w in win):
-                    continue
-                # 1 từ ngoại ghép từ >= 2 âm tiết Việt: "ứng lẹ món" -> "ứng lemon"; trừ cách nghe sai đã mine (alias)
-                if n == 1 and size > 1 and not exact and all(_VI_SYL.match(w) for w in win):
-                    continue
-                r = ratio(key(win), ek)
-                if r < 1.0 and size > 1 and any(w in common and len(w) <= 2 for w in win):  # đừng nuốt từ chức năng ngắn
-                    continue
-                if n > 1 and _covered(win, ew) < 0.75:
-                    continue
-                adj = r - size_penalty * abs(size - n)
-                if adj >= (thr_short if len(ek) <= 5 else thr) and (best is None or adj > best[0]):
-                    best = (adj, i, size, r)
-        if best:
-            _, i, size, r = best
-            changes.append((" ".join(words[i:i + size]), disp, round(r, 2)))
-            repl[i] = (size, disp)
-            for j in range(i, i + size):
-                used[j] = True
-    out, i = [], 0
-    while i < len(words):
-        if i in repl:
-            size, disp = repl[i]
-            out.append(disp)
-            i += size
-        else:
-            out.append(words[i])
-            i += 1
-    rep = {w for _, ew, _, _ in als for w in ew if not _VI_SYL.match(w) and w not in _NUM_WORDS}
-    return " ".join(_dedup(out, rep)), changes
-
-
-def load_global(path):
-    """hotwords_global.json (mine_hotwords.py) -> alias cho snap_text(aliases=...): mỗi dạng đọc / cách nghe sai lặp lại
-    của một cụm -> (surface, words, key, display). display = dạng viết (SMS, Zalo, check-in); mã có số giữ dạng đọc
-    ("ron chín lăm") để ITN đổi số. Dùng thay cho build_lexicon(state.json) khi không được đọc state."""
-    out = []
-    for r in json.load(open(path, encoding="utf-8")):
-        for al in r["aliases"]:
-            w = al.split()
-            if w:
-                out.append((r["display"], w, key(w), r["display"]))
-    return out
 
 
 def snap_value(value, entities, thr=0.8):

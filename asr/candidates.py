@@ -1,18 +1,21 @@
-"""Đánh dấu từ ASR có confidence thấp + ứng viên gần âm, để LLM sửa lại (pipeline.py --refine).
+"""Đánh dấu từ ASR có confidence thấp + ứng viên gần âm, để LLM sửa lại (pipeline.py, luôn chạy sau ASR).
 
-    cands = Candidates.from_train("data/asr_train_tn.jsonl")      # học từ cặp hyp (ASR) / ref_spoken của train
+    cands = Candidates.from_train("data/asr_train_plain.jsonl")   # cặp hyp (ASR) / ref_spoken của train (eval_asr.py --dump)
     marked, n = cands.mark([("sẵn", 0.1), ("lo", 0.9), ...], thr=0.6)
     # -> "[sẵn|xăng|sang] lo chín lăm ...", n = số từ được đánh dấu
 
 Ứng viên của một từ w (không có luật viết tay):
   1. bảng nhầm lẫn: ASR nghe "w" mà ref là "x" (căn hyp/ref bằng difflib, cặp thay thế 1-1), xếp theo số lần;
-  2. từ trong từ vựng train có khoá âm (hotwords.bias.phon: bỏ dấu, gộp s/x, ch/tr, d/gi/r...) gần với w, xếp theo tần suất.
+  2. từ gần âm trong từ vựng train theo asr/vi_phon.dist (tách âm tiết: đầu / đệm / chính / cuối / thanh, cặp lẫn theo
+     vùng miền tốn ít: s/x, ch/tr, d/gi/r/v, l/n, -n/-ng, -t/-c, ă/â/ơ, iê/i, hỏi/ngã...), gần hơn trước, cùng mức thì
+     từ hay gặp trước. Từ không phải âm tiết tiếng Việt (zalo, sms) dùng khoá hotwords.bias.phon.
 Bỏ các câu held-out (id % 10 == 9) để còn đánh giá được.
 """
 import difflib
 import json
 from collections import Counter, defaultdict
 
+from asr.vi_phon import dist, parse
 from hotwords.bias import phon, ratio
 
 
@@ -49,10 +52,15 @@ class Candidates:
                         confusion[h][t] += 1
         return cls(confusion, vocab)
 
-    def candidates(self, word, k=3, min_ratio=0.75, min_count=2):
-        """bảng nhầm lẫn (gặp >= min_count lần) trước, rồi từ gần âm: giống âm hơn trước, cùng mức thì từ hay gặp trước."""
+    def candidates(self, word, k=3, min_ratio=0.75, min_count=2, max_dist=0.8, method="syl"):
+        """bảng nhầm lẫn (gặp >= min_count lần) trước, rồi từ gần âm: giống âm hơn trước, cùng mức thì từ hay gặp trước.
+        method="syl": vi_phon.dist <= max_dist; "key" (hoặc từ không parse được): khoá phon, ratio >= min_ratio."""
         out = [t for t, n in self.confusion.get(word, Counter()).most_common(k) if t != word and n >= min_count]
-        if len(out) < k:
+        if len(out) < k and method == "syl" and parse(word) is not None:
+            near = [(d, -self.vocab[v], v) for v in self.vocab
+                    if v != word and v not in out and (d := dist(word, v)) <= max_dist]
+            out += [v for *_, v in sorted(near)[:k - len(out)]]
+        elif len(out) < k:
             pw = phon(word)
             near = []
             for key, ws in self._phon.items():
@@ -62,12 +70,14 @@ class Candidates:
             out += [v for *_, v in sorted(near, reverse=True)[:k - len(out)]]
         return out
 
-    def mark(self, words, thr=0.6, k=3):
+    def mark(self, words, thr=0.6, k=3, keep=frozenset()):
         """words: [(từ, conf)] -> (chuỗi có [từ|ứng viên...] ở chỗ conf < thr, số từ được đánh dấu).
-        Từ có conf thấp mà không có ứng viên vẫn được đánh dấu dạng [từ] để LLM biết chỗ nghi ngờ."""
+        Từ có conf thấp mà không có ứng viên vẫn được đánh dấu dạng [từ] để LLM biết chỗ nghi ngờ.
+        keep: từ của hotword (--bias) -> không đánh dấu: hotword kéo tên vào làm conf (log-prob âm học) thấp,
+        đánh dấu thì LLM dễ đổi ngược "phạm hùng" -> "phạm hưng"."""
         parts, n = [], 0
         for w, c in words:
-            if c < thr:
+            if c < thr and w not in keep:
                 parts.append("[" + "|".join([w] + self.candidates(w, k)) + "]")
                 n += 1
             else:
@@ -103,11 +113,11 @@ def accept_refine(raw, out):
     return out if same >= 0.6 * len(a) else raw
 
 
-def refine(llm, word_lists, cands, thr=0.6, k=3, use_context=True):
-    """word_lists: [[(từ, conf)]] các lượt của một sample (history trước, query cuối).
+def refine(llm, word_lists, cands, thr=0.6, k=3, use_context=True, keep=frozenset()):
+    """word_lists: [[(từ, conf)]] các lượt của một sample (history trước, query cuối). keep: xem Candidates.mark.
     Trả (texts, marked): chỉ gọi LLM cho lượt có từ được đánh dấu, gọi một lô."""
     raws = [" ".join(w for w, _ in wl) for wl in word_lists]
-    marked = [cands.mark(wl, thr, k) for wl in word_lists]
+    marked = [cands.mark(wl, thr, k, keep) for wl in word_lists]
     idx = [i for i, (_, n) in enumerate(marked) if n]
     texts = list(raws)
     if idx and llm is not None:

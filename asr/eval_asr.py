@@ -1,15 +1,15 @@
 """Đo WER Zipformer trên train (có nhãn) theo nhiều cấu hình: greedy / beam / + hotword toàn cục / + VAD / + LM.
 Offline, không đọc state.json. Ref = audio_text đổi sang dạng đọc (vi_num.to_spoken, chấp nhận mọi cách đọc số hợp lệ).
 
-    # 1) decode train không hotword -> dữ liệu cho hotwords/mine_hotwords.py / lm/train_rnnlm.py (thay asr_train.jsonl vốn có --bias)
+    # A) decode train không hotword -> data/asr_train_plain.jsonl (hyp + ref_spoken): đầu vào của
+    #    hotwords/mine_hotwords.py, lm/train_rnnlm.py và ứng viên của pipeline.py (--cand-train)
     python asr/eval_asr.py --root DATA --subset all --configs beam --dump data/asr_train_plain.jsonl
 
-    # 2) so sánh trên held-out (id % 10 == 9, không dùng để khai thác hotword / train LM)
-    python asr/eval_asr.py --root DATA --configs greedy,beam,hw,vad+hw,hw+lm,vad+hw+lm+snap+fix \\
+    # D) so sánh trên held-out (id % 10 == 9, không dùng để khai thác hotword / train LM)
+    python asr/eval_asr.py --root DATA --configs greedy,beam,hw,vad+hw,hw+lm,vad+hw+lm \\
         --hotwords hotwords/hotwords_global.txt --lm lm/rnnlm/rnnlm.onnx --lm-scales 0.1,0.2,0.3,0.5
 
-Cấu hình = các phần nối bằng '+': greedy | beam | hw (hotwords_file) | vad | lm | snap (snap_text theo
-hotwords_global.json) | fix (asr_fix). "hw"/"lm" ngầm dùng beam search.
+Cấu hình = các phần nối bằng '+': greedy | beam | hw (hotwords_file) | vad | lm. "hw"/"lm" ngầm dùng beam search.
 """
 import argparse
 import json
@@ -24,7 +24,6 @@ import sys  # noqa: E402
 if __package__ in (None, ""):  # chạy trực tiếp: python asr/eval_asr.py
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from asr.asr_fix import fix_text  # noqa: E402
 from hotwords.mine_hotwords import is_heldout  # noqa: E402
 from textnorm.textutil import norm, wer_counts  # noqa: E402
 from textnorm.vi_num import to_spoken  # noqa: E402
@@ -58,7 +57,6 @@ def main():
     ap.add_argument("--beam", type=int, default=4)
     ap.add_argument("--hotwords", default="hotwords/hotwords_global.txt")
     ap.add_argument("--hotwords-score", type=float, default=1.5, help="score mặc định cho dòng không ghi :score")
-    ap.add_argument("--snap-json", default=None, help="mặc định: <hotwords>.json")
     ap.add_argument("--lm", default="lm/rnnlm/rnnlm.onnx")
     ap.add_argument("--lm-scales", default="0.3")
     ap.add_argument("--vad-pad", type=float, default=0.15)
@@ -85,12 +83,6 @@ def main():
         else:
             configs.append((c, parts, None))
 
-    snap_aliases, common = None, frozenset()
-    if any("snap" in p for _, p, _ in configs):
-        from hotwords.bias import common_words, load_global
-        snap_aliases = load_global(a.snap_json or str(Path(a.hotwords).with_suffix(".json")))
-        common = common_words(root / "train" / "train.jsonl")
-
     cache, rows = {}, []
     for name, parts, scale in configs:
         akey = ("greedy" in parts and not parts & {"hw", "lm"}, "hw" in parts, "vad" in parts, scale)
@@ -110,11 +102,6 @@ def main():
             cache[akey] = hyps
             del asr
         hyps = list(cache[akey])
-        if "snap" in parts:
-            from hotwords.bias import snap_text
-            hyps = [snap_text(h, [], common, aliases=snap_aliases)[0] for h in hyps]
-        if "fix" in parts:
-            hyps = [fix_text(h)[0] for h in hyps]
         err = tot = err_q = tot_q = 0
         recs = []
         for u, h in zip(utts, hyps):

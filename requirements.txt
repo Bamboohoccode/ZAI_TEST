@@ -12,15 +12,12 @@ soundfile>=0.12
 silero-vad>=6.0                # chỉ dùng file silero_vad.onnx đóng gói sẵn (asr/vad.py)
 librosa>=0.10                  # resample khi audio không phải 16 kHz (asr/vad.py)
 
-# --- ASR ChunkFormer (pipeline.py --asr-model chunkformer)
-chunkformer>=1.2
-
-# --- Torch / HF: ITN (ITN/), seq2seq mapper (mapper/), train RNNLM (lm/)
+# --- Torch / HF: ITN (ITN/), train RNNLM (lm/)
 torch>=2.4
 transformers>=4.45
 safetensors>=0.4
 datasets>=2.20
-accelerate>=0.30               # Trainer của transformers (ITN/main.py, mapper/seq2seq_mapper.py train)
+accelerate>=0.30               # Trainer của transformers (ITN/main.py)
 validators>=0.22               # ITN/preprocess.py
 onnx>=1.16                     # export RNNLM (lm/train_rnnlm.py)
 
