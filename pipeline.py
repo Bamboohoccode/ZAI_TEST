@@ -305,7 +305,8 @@ def _vllm_worker(conn, device, args, backend="vllm"):
             op, payload = conn.recv()
             conn.send(llm.chat(*payload) if op == "chat" else llm.n_tokens(*payload))
     except Exception as e:
-        conn.send(e)
+        # gửi chuỗi, không gửi object: exception của NVML / CUDA không unpickle được ở process cha (che mất lỗi thật)
+        conn.send(RuntimeError(f"[LLM process, GPU {device}] {type(e).__name__}: {e}\n{traceback.format_exc()}"))
 
 
 class RemoteVLLM:
@@ -638,7 +639,8 @@ def main():
     ap.add_argument("--cand-k", type=int, default=3, help="số ứng viên mỗi từ")
     ap.add_argument("--cand-train", default=str(Path(__file__).resolve().parent / "data" / "asr_train_plain.jsonl"),
                     help="jsonl có hyp + ref_spoken (asr/eval_asr.py --dump, bước A) để học bảng nhầm lẫn và từ vựng")
-    ap.add_argument("--mapper", default=MAPPER_MODEL, help='HF id or local folder, "none" = off')
+    ap.add_argument("--mapper", default=MAPPER_MODEL,
+                    help='HF id or local folder, "none" = off, "same" = dùng chung model với --llm (không nạp model thứ hai)')
     ap.add_argument("--mapper-lora")
     ap.add_argument("--mapper-device", help="GPU index for the mapper, run in its own process (default: share the LLM's GPU)")
     ap.add_argument("--llm-device", help="GPU index cho LLM chính (planner/verifier/refine), chạy trong process riêng "
@@ -714,8 +716,10 @@ def main():
                                                          MAX_CTX if a.prefetch else 4096, 256, {"enable_thinking": False}, a.eager)
         return run_audio_only(a, items, asr, t_start, llm, cands, catalog)
     m_args = (a.mapper, a.mapper_lora, a.mapper_gpu_mem, a.seed, 2048, 256, {"enable_thinking": False}, a.eager)
-    mapper = None if a.mapper == "none" or gold else make_llm(a.mapper_device, *m_args)
     llm = GoldLLM() if gold else make_llm(a.llm_device, a.llm, a.llm_lora, a.gpu_mem, a.seed, MAX_CTX, MAX_NEW, None, a.eager)
+    # "same" (hoặc trùng --llm, không LoRA riêng): mapper dùng chung model với LLM chính -> chỉ nạp 1 model lên GPU
+    share = a.mapper == "same" or (a.mapper == a.llm and a.mapper_lora == a.llm_lora)
+    mapper = None if a.mapper == "none" or gold else llm if share else make_llm(a.mapper_device, *m_args)
     common = frozenset(common_words(root / a.split / f"{a.split}.jsonl")) if a.bias else frozenset()
     slow, shown_tb = [], False
     with open(a.out, "w", encoding="utf-8") as fout, open(a.out + ".trace.jsonl", "w", encoding="utf-8") as ftr:
@@ -738,7 +742,7 @@ def main():
                     trace.extend({"refine": {"marked": m, "to": t}} for m, t in zip(marked, raw) if "[" in m)
                     trace.extend({"bias_fallback": k} for k, f in enumerate(fell) if f)
                 # 2. dialect mapper (không ITN: số giữ dạng chữ, planner tự đổi sang tham số); output rỗng -> giữ câu cũ
-                texts = [m or r for r, m in zip(raw, mapper.chat([mapper_conv(r) for r in raw]))] if mapper else raw
+                texts = [m or r for r, m in zip(raw, mapper.chat([mapper_conv(r) for r in raw], None, {"enable_thinking": False}))] if mapper else raw
                 # 3-5. planner <-> verifier -> executor
                 msgs, keep = fit_messages(item, texts, llm, tools)
                 if pre_done:  # tool đọc của bước prefetch đã chạy trên env: planner thấy kết quả, đi tiếp từ đó
