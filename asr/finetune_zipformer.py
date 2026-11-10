@@ -891,6 +891,9 @@ def stage_train(a):
     model.to(dev)
 
     # ---------------- optimizer / resume
+    frozen = freeze_params(model, a.freeze)
+    trainable = [p for p in model.parameters() if p.requires_grad]
+    log(f"--freeze {a.freeze}: đóng băng {frozen / 1e6:.1f}M tham số, train {sum(p.numel() for p in trainable) / 1e6:.1f}M")
     opt = ScaledAdam(get_parameter_groups(model, a.lr), lr=a.lr, clipping_scale=2.0)
     sch = Eden(opt, a.lr_batches, a.lr_epochs, warmup_batches=a.warmup_batches)
     scaler = create_grad_scaler(enabled=fp16, init_scale=1.0)
@@ -945,6 +948,8 @@ def stage_train(a):
     if a.feat_aug_p > 0:
         train_tf.insert(0, FeatNoiseGain(a.feat_aug_p))
     bad = 0
+    stop_all = False
+    guard = {"sd": {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}, "ref": None, "n": 0}
     for epoch in range(state["epoch"] + 1, a.epochs + 1):
         cuts, nh, oh = epoch_cuts(epoch)
         log(f"epoch {epoch}: {len(cuts)} cuts, mới {nh:.2f} h + cũ {oh:.2f} h -> mới chiếm {nh / (nh + oh):.1%}")
@@ -954,7 +959,8 @@ def stage_train(a):
                         batch_size=None, num_workers=a.num_workers)
         sch.step_epoch(epoch - 1)
         model.train()
-        t0, tot_loss, tot_frames, skipped, applied, inf_skip = time.time(), 0.0, 0, 0, 0, 0
+        t0, tot_loss, tot_frames, skipped, applied, inf_skip, bad_grad = time.time(), 0.0, 0, 0, 0, 0, 0
+        win_loss = win_frames = 0.0
         for bi, b in enumerate(dl):
             state["step"] += 1
             step = state["step"]
@@ -969,6 +975,12 @@ def stage_train(a):
                 opt.zero_grad()
                 continue
             scaler.scale(loss).backward()
+            if not fp16:  # fp32: loss hữu hạn nhưng grad inf/NaN -> ScaledAdam sẽ ghi NaN vào weights -> bỏ bước
+                gsq = torch.stack([p.grad.float().pow(2).sum() for p in trainable if p.grad is not None]).sum()
+                if not torch.isfinite(gsq):
+                    bad_grad += 1
+                    opt.zero_grad()
+                    continue
             sch.step_batch(step)
             s0 = scaler.get_scale() if fp16 else 1.0
             scaler.step(opt)  # fp16: grad inf/NaN -> GradScaler LẶNG LẼ bỏ bước này, chỉ hạ scale
@@ -994,8 +1006,34 @@ def stage_train(a):
             fr = (xl // 4).sum().item()
             tot_loss += loss.item()
             tot_frames += fr
+            win_loss += loss.item()
+            win_frames += fr
+            if (bi + 1) % a.log_every == 0:
+                wl = win_loss / max(win_frames, 1)
+                win_loss = win_frames = 0.0
+                finite = all(torch.isfinite(p).all() for p in trainable)
+                if guard["ref"] is None and finite:
+                    guard["ref"] = wl  # loss TB cửa sổ đầu tiên làm mốc
+                diverged = not finite or (guard["ref"] is not None and wl > a.diverge_ratio * guard["ref"])
+                if diverged:
+                    guard["n"] += 1
+                    why = "weights NaN/inf" if not finite else f"loss TB cửa sổ {wl:.4f} > {a.diverge_ratio} x mốc {guard['ref']:.4f}"
+                    if guard["n"] > a.max_recover:
+                        log(f"PHÂN KỲ ({why}) quá {a.max_recover} lần -> dừng train")
+                        model.load_state_dict(guard["sd"])
+                        stop_all = True
+                        break
+                    sch.base_lrs = [x * 0.5 for x in sch.base_lrs]
+                    log(f"PHÂN KỲ ở ep {epoch} batch {bi} ({why}) -> khôi phục weights tốt gần nhất, xoá trạng thái "
+                        f"optimizer, giảm lr còn {sch.base_lrs[0]:.1e} (lần {guard['n']}/{a.max_recover})")
+                    model.load_state_dict(guard["sd"])
+                    opt.state.clear()
+                    guard["ref"] = None
+                else:
+                    guard["sd"] = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
             if bi % a.log_every == 0:
-                log(f"  ep {epoch} batch {bi} | loss/frame {loss.item() / max(fr, 1):.4f} | "
+                log(f"  ep {epoch} batch {bi} | loss/frame batch này {loss.item() / max(fr, 1):.4f}, "
+                    f"TB từ đầu epoch {tot_loss / max(tot_frames, 1):.4f} | "
                     f"lr {sch.get_last_lr()[0]:.2e} | cập nhật {applied}, bị bỏ (grad inf) {inf_skip}"
                     + (f", scale {scaler.get_scale():.1e}" if fp16 else "") + f" | {time.time() - t0:.0f}s")
         with torch.no_grad():  # weights đã đi xa model gốc bao nhiêu (0 = không học gì)
@@ -1006,7 +1044,8 @@ def stage_train(a):
                     num += (v.float() - b0).pow(2).sum().item()
                     den += b0.pow(2).sum().item()
         drift = (num / max(den, 1e-12)) ** 0.5
-        log(f"epoch {epoch}: {applied} bước cập nhật thật, {inf_skip} bước bị GradScaler bỏ, {skipped} batch loss NaN | "
+        log(f"epoch {epoch}: {applied} bước cập nhật thật, {inf_skip} bước bị GradScaler bỏ, {skipped} batch loss NaN, "
+            f"{bad_grad} batch grad inf/NaN bị bỏ | "
             f"weights lệch model gốc {drift:.2e} (tương đối)")
         if applied == 0 or drift < 1e-6:
             log("CẢNH BÁO: model KHÔNG thay đổi trong epoch này -> kết quả eval sẽ y hệt model gốc. "
@@ -1031,6 +1070,8 @@ def stage_train(a):
                 p.unlink()
         torch.save({"model": model.state_dict(), "optimizer": opt.state_dict(), "scheduler": sch.state_dict(),
                     "scaler": scaler.state_dict(), "state": state}, last)
+        if stop_all:
+            break
         # dev_keep hỏng quá ngưỡng k epoch liên tiếp -> đang học vẹt câu sai, phá câu vốn đúng: dừng
         broke = 0
         for h in reversed(state["history"]):
@@ -1136,8 +1177,29 @@ def stage_train(a):
 
 
 def get_parameter_groups(model, lr):
+    """như icefall train.py, nhưng bỏ tham số đã đóng băng (requires_grad=False)."""
     from icefall.utils import get_parameter_groups_with_lrs
-    return get_parameter_groups_with_lrs(model, lr=lr, include_names=True)
+    groups = []
+    for g in get_parameter_groups_with_lrs(model, lr=lr, include_names=True):
+        g["named_params"] = [(n, p) for n, p in g["named_params"] if p.requires_grad]
+        if g["named_params"]:
+            groups.append(g)
+    return groups
+
+
+FREEZE = {"none": (), "embed": ("encoder_embed.",),
+          "low": ("encoder_embed.", "encoder.encoders.0.", "encoder.encoders.1."),
+          "mid": ("encoder_embed.", "encoder.encoders.0.", "encoder.encoders.1.", "encoder.encoders.2.")}
+
+
+def freeze_params(model, level):
+    """đóng băng lớp gần đầu vào (đặc trưng âm học chung, ít liên quan lỗi miền) -> ổn định + ít quên. -> số tham số đóng."""
+    n = 0
+    for name, p in model.named_parameters():
+        if name.startswith(FREEZE[level]):
+            p.requires_grad_(False)
+            n += p.numel()
+    return n
 
 
 def FeatNoiseGain(p):  # noqa: N802 — tạo lớp lúc cần (torch chỉ import trong stage train)
@@ -1229,6 +1291,11 @@ def main():
                    help="auto = bf16 nếu GPU hỗ trợ (A100/L4/H100), không thì fp32 (T4/P100). fp16: model 150M bị tràn "
                         "số (grad inf) trên T4 -> không học")
     g.add_argument("--no-fp16", dest="amp", action="store_const", const="none", help="= --amp none")
+    g.add_argument("--freeze", choices=list(FREEZE), default="low",
+                   help="đóng băng lớp gần đầu vào: none / embed (encoder_embed) / low (+ stack 0,1, mặc định) / mid (+ stack 2)")
+    g.add_argument("--diverge-ratio", type=float, default=1.5,
+                   help="loss TB một cửa sổ --log-every batch > ngần này x cửa sổ đầu -> coi là phân kỳ: khôi phục + giảm nửa lr")
+    g.add_argument("--max-recover", type=int, default=3, help="số lần khôi phục khi phân kỳ trước khi dừng hẳn")
     g.add_argument("--fp16-check", type=int, default=50,
                    help="--amp fp16: sau ngần này batch mà > 20%% batch bị GradScaler bỏ (grad inf) -> tự chuyển fp32")
     g.add_argument("--select", choices=["mean", "new", "hard", "old"], default="mean", help="chọn epoch theo WER này")
