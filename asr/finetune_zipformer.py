@@ -180,7 +180,8 @@ def stage_setup(a):
     log("torch", torch.__version__, "| CUDA", torch.version.cuda,
         "| GPU", torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)
     pip("lhotse", "lilcom", "sentencepiece", "sherpa-onnx", "kaldialign", "tensorboard", "onnx", "onnxruntime",
-        "onnxmltools", "soundfile", "scipy", "huggingface_hub", "datasets", "dill", "typeguard")
+        "onnxmltools", "soundfile", "scipy", "huggingface_hub", "datasets", "dill", "typeguard",
+        "pypinyin", "packaging")  # icefall/utils.py import pypinyin, packaging ngay đầu file
     try:
         import k2  # noqa: F401
     except ImportError:
@@ -942,7 +943,7 @@ def stage_train(a):
                         batch_size=None, num_workers=a.num_workers)
         sch.step_epoch(epoch - 1)
         model.train()
-        t0, tot_loss, tot_frames, skipped = time.time(), 0.0, 0, 0
+        t0, tot_loss, tot_frames, skipped, applied, inf_skip = time.time(), 0.0, 0, 0, 0, 0
         for bi, b in enumerate(dl):
             state["step"] += 1
             step = state["step"]
@@ -958,9 +959,19 @@ def stage_train(a):
                 continue
             scaler.scale(loss).backward()
             sch.step_batch(step)
-            scaler.step(opt)
+            s0 = scaler.get_scale() if fp16 else 1.0
+            scaler.step(opt)  # fp16: grad inf/NaN -> GradScaler LẶNG LẼ bỏ bước này, chỉ hạ scale
             scaler.update()
             opt.zero_grad()
+            if fp16 and scaler.get_scale() < s0:
+                inf_skip += 1
+            else:
+                applied += 1
+            if fp16 and bi + 1 == a.fp16_check and applied == 0:
+                log(f"CẢNH BÁO: {a.fp16_check} batch đầu đều bị GradScaler bỏ qua (grad fp16 inf/NaN, scale "
+                    f"{scaler.get_scale():.2e}) -> model không học. Chuyển sang fp32 cho phần còn lại.")
+                fp16 = False
+                scaler = create_grad_scaler(enabled=False, init_scale=1.0)
             if fp16 and step % 100 == 0:  # như icefall: đừng để grad scale tụt quá thấp
                 s = scaler._scale.item()
                 if s < 8.0 or (s < 32.0 and step % 400 == 0):
@@ -970,9 +981,26 @@ def stage_train(a):
             tot_frames += fr
             if bi % a.log_every == 0:
                 log(f"  ep {epoch} batch {bi} | loss/frame {loss.item() / max(fr, 1):.4f} | "
-                    f"lr {sch.get_last_lr()[0]:.2e} | {time.time() - t0:.0f}s")
-        rd, _ = evaluate()
-        rd.update(epoch=epoch, loss=tot_loss / max(tot_frames, 1))
+                    f"lr {sch.get_last_lr()[0]:.2e} | cập nhật {applied}, bị bỏ (grad inf) {inf_skip}"
+                    + (f", scale {scaler.get_scale():.1e}" if fp16 else "") + f" | {time.time() - t0:.0f}s")
+        with torch.no_grad():  # weights đã đi xa model gốc bao nhiêu (0 = không học gì)
+            num = den = 0.0
+            for k, v in model.state_dict().items():
+                if v.is_floating_point() and k in base_sd and k in pnames:
+                    b0 = base_sd[k].to(v.device, torch.float32)
+                    num += (v.float() - b0).pow(2).sum().item()
+                    den += b0.pow(2).sum().item()
+        drift = (num / max(den, 1e-12)) ** 0.5
+        log(f"epoch {epoch}: {applied} bước cập nhật thật, {inf_skip} bước bị GradScaler bỏ, {skipped} batch loss NaN | "
+            f"weights lệch model gốc {drift:.2e} (tương đối)")
+        if applied == 0 or drift < 1e-6:
+            log("CẢNH BÁO: model KHÔNG thay đổi trong epoch này -> kết quả eval sẽ y hệt model gốc. "
+                "Thử --no-fp16 hoặc tăng --lr")
+        rd, hn = evaluate()
+        rd.update(epoch=epoch, loss=tot_loss / max(tot_frames, 1), drift=drift, applied=applied)
+        broken = [k for k in state.get("keep_ids") or [] if k in hn and utt_errors(*hn[k])[0] > 0]
+        for k in broken[:a.show_broken]:  # xem model làm hỏng câu đúng kiểu gì (nhãn lệch? đổi phương ngữ? bỏ từ?)
+            log(f"  keep hỏng {k}\n      REF: {hn[k][0]}\n      HYP: {hn[k][1]}")
         state["history"].append(rd)
         state["epoch"] = epoch
         torch.save({"model": model.state_dict()}, exp / f"epoch-{epoch}.pt")
@@ -980,7 +1008,8 @@ def stage_train(a):
             + (f" | bỏ {skipped} batch NaN" if skipped else "")
             + ("" if keep_ok(rd) else f" | dev_keep hỏng > {a.keep_max_broken} câu")
             + ("" if eligible(rd) or not keep_ok(rd) else " | dev_old tệ quá ngưỡng"))
-        keep = {h["epoch"] for h in ranked()[:a.avg_top_k]} | {epoch}
+        keep = {h["epoch"] for h in ranked()[:a.avg_top_k]} | {epoch} | \
+            {min(state["history"], key=lambda h: (h.get("keep_broken", 0), h[a.select]))["epoch"]}  # cho WiSE-FT dự phòng
         for h in state["history"]:  # chỉ giữ top-K checkpoint (đỡ tốn ổ /kaggle/working)
             p = exp / f"epoch-{h['epoch']}.pt"
             if h["epoch"] not in keep and p.exists():
@@ -1007,9 +1036,15 @@ def stage_train(a):
 
     # ---------------- chọn model cuối: epoch tốt nhất / trung bình top-K, so với model gốc
     top = [h["epoch"] for h in ranked()[:a.avg_top_k] if (exp / f"epoch-{h['epoch']}.pt").exists()]
-    if not top:
-        log("Không epoch nào đạt điều kiện (dev_old tệ quá ngưỡng hoặc làm hỏng dev_keep) -> giữ model gốc, không export")
-        return
+    only_wise = False
+    if not top:  # không epoch nào đạt: vẫn thử WiSE-FT (nội suy về model gốc) với epoch ít làm hỏng dev_keep nhất
+        have = [h for h in state["history"] if (exp / f"epoch-{h['epoch']}.pt").exists()]
+        if not have or not a.wise_alphas:
+            log("Không epoch nào đạt điều kiện (dev_old tệ quá ngưỡng hoặc làm hỏng dev_keep) -> giữ model gốc, không export")
+            return
+        top = [min(have, key=lambda h: (h.get("keep_broken", 0), h[a.select]))["epoch"]]
+        only_wise = True
+        log(f"Không epoch nào đạt điều kiện -> thử WiSE-FT trên epoch {top[0]} (α {a.wise_alphas})")
     load = lambda e: torch.load(exp / f"epoch-{e}.pt", map_location="cpu", weights_only=False)["model"]
     cands = {f"epoch {top[0]}": load(top[0])}
     if len(top) > 1:
@@ -1030,8 +1065,13 @@ def stage_train(a):
         model.load_state_dict(s)
         results[name] = evaluate()[0]
         log(f"{name:24s} {fmt(results[name])}" + ("" if eligible(results[name]) else " | không đạt dev_keep/dev_old"))
+    if only_wise:
+        results.pop(f"epoch {top[0]}", None)  # bản gốc của epoch đã biết là không đạt
     final = min(results, key=lambda n: (not eligible(results[n]), results[n][a.select]))  # bản avg cũng phải qua dev_keep
     log(f"MODEL GỐC   {fmt(base)}\nCHỌN {final}: {fmt(results[final])}")
+    if not eligible(results[final]):
+        log("Không bản nào (kể cả WiSE-FT) qua dev_keep/dev_old -> giữ model gốc, không export")
+        return
     if results[final][a.select] >= base[a.select]:
         log(f"CẢNH BÁO: model fine-tune không tốt hơn model gốc theo '{a.select}' — vẫn export để so, cân nhắc không dùng")
     torch.save({"model": cands[final]}, exp / "epoch-99.pt")  # export-onnx.py --epoch 99 --avg 1
@@ -1171,6 +1211,8 @@ def main():
     g.add_argument("--speed-new", default="1.0,0.9,1.1", help="speed perturb dữ liệu mới, mỗi epoch 1 mức (luân phiên)")
     g.add_argument("--feat-aug-p", type=float, default=0.3, help="xác suất nhiễu + gain trên fbank mỗi câu")
     g.add_argument("--no-fp16", dest="fp16", action="store_false")
+    g.add_argument("--fp16-check", type=int, default=50,
+                   help="nếu ngần này batch đầu mỗi epoch đều bị GradScaler bỏ (grad inf) -> tự chuyển fp32")
     g.add_argument("--select", choices=["mean", "new", "hard", "old"], default="mean", help="chọn epoch theo WER này")
     g.add_argument("--max-old-degrade", type=float, default=0.01,
                    help="loại epoch có WER dev_old > model gốc + ngưỡng (tuyệt đối, 0.01 = 1 điểm WER)")
@@ -1183,6 +1225,7 @@ def main():
     g.add_argument("--keep-patience", type=int, default=2,
                    help="dừng khi dev_keep hỏng quá ngưỡng k epoch liên tiếp")
     g.add_argument("--avg-top-k", type=int, default=2)
+    g.add_argument("--show-broken", type=int, default=8, help="mỗi epoch in tối đa ngần này câu dev_keep bị làm hỏng")
     g.add_argument("--wise-alphas", default="0.3,0.5,0.7",
                    help="WiSE-FT: thử nội suy model chọn được với model gốc ở các alpha này (1.0 = bản fine-tune luôn được thử); "
                         "chọn bản tốt nhất theo --select trong số bản qua dev_keep/dev_old; rỗng = tắt")
