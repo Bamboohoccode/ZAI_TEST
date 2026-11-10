@@ -692,7 +692,18 @@ def stage_train(a):
     random.seed(a.seed)
     torch.manual_seed(a.seed)
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    fp16 = dev.type == "cuda" and a.fp16
+    # model 150M (train bf16/fp32) có activation vượt ngưỡng fp16 (65504) -> grad inf ở mọi scale, GradScaler bỏ gần
+    # hết bước (đã gặp trên T4). Mặc định: bf16 nếu GPU hỗ trợ (Ampere+: A100/L4/H100), không thì fp32 (T4/P100).
+    amp = a.amp
+    if amp == "auto":
+        amp = "bf16" if dev.type == "cuda" and torch.cuda.is_bf16_supported() and \
+            torch.cuda.get_device_capability()[0] >= 8 else "none"
+    if dev.type != "cuda":
+        amp = "none"
+    fp16 = amp == "fp16"  # chỉ fp16 mới cần GradScaler
+    amp_kw = dict(enabled=amp != "none", dtype=torch.bfloat16 if amp == "bf16" else torch.float16)
+    log(f"độ chính xác train: {amp}" + (" (fp32 chậm hơn ~2x và tốn VRAM hơn: T4 nên --max-duration 100-150)"
+                                         if amp == "none" and dev.type == "cuda" else ""))
     if dev.type != "cuda":
         log("CẢNH BÁO: không có GPU — train 150M trên CPU rất chậm")
 
@@ -841,7 +852,7 @@ def stage_train(a):
         out = {}
         for b in dl:
             xx, xl = b["inputs"].to(dev), b["supervisions"]["num_frames"].to(dev)
-            with torch_autocast(enabled=fp16):
+            with torch_autocast(**amp_kw):
                 enc, encl = model.forward_encoder(xx, xl)
             hyps = greedy_search_batch(model=model, encoder_out=enc.float(), encoder_out_lens=encl)
             for c, h in zip(b["supervisions"]["cut"], hyps):
@@ -950,7 +961,7 @@ def stage_train(a):
             set_batch_count(model, 100000.0 + step * a.max_duration / 600)  # ScheduledFloat ở giá trị cuối (như finetune.py)
             xx, xl = b["inputs"].to(dev), b["supervisions"]["num_frames"].to(dev)
             y = k2.RaggedTensor(sp.encode(b["supervisions"]["text"], out_type=int))
-            with torch_autocast(enabled=fp16):
+            with torch_autocast(**amp_kw):
                 simple, pruned, ctc, _, _ = model(x=xx, x_lens=xl, y=y, prune_range=5, am_scale=0.0, lm_scale=0.25)
                 loss = 0.5 * simple + pruned + (a.ctc_scale * ctc if has_ctc and torch.is_tensor(ctc) else 0.0)
             if not torch.isfinite(loss):
@@ -967,11 +978,15 @@ def stage_train(a):
                 inf_skip += 1
             else:
                 applied += 1
-            if fp16 and bi + 1 == a.fp16_check and applied == 0:
-                log(f"CẢNH BÁO: {a.fp16_check} batch đầu đều bị GradScaler bỏ qua (grad fp16 inf/NaN, scale "
-                    f"{scaler.get_scale():.2e}) -> model không học. Chuyển sang fp32 cho phần còn lại.")
+            if fp16 and bi + 1 >= a.fp16_check and (inf_skip > 0.2 * (bi + 1) or scaler.get_scale() < 1e-3):
+                log(f"CẢNH BÁO: fp16 tràn số: {inf_skip}/{bi + 1} batch bị GradScaler bỏ (grad inf), scale "
+                    f"{scaler.get_scale():.1e} -> chuyển fp32 cho phần còn lại (lần sau dùng --amp none)")
                 fp16 = False
+                amp_kw["enabled"] = False
                 scaler = create_grad_scaler(enabled=False, init_scale=1.0)
+                # ScaledAdam lấy ngưỡng clip = 2 x trung vị grad-norm gần đây; bước bị bỏ để lại 0 -> ngưỡng 0 ->
+                # "Scaling gradients by 0.0" (không học). Xoá trạng thái để nó thống kê lại từ đầu.
+                opt.state.clear()
             if fp16 and step % 100 == 0:  # như icefall: đừng để grad scale tụt quá thấp
                 s = scaler._scale.item()
                 if s < 8.0 or (s < 32.0 and step % 400 == 0):
@@ -995,7 +1010,7 @@ def stage_train(a):
             f"weights lệch model gốc {drift:.2e} (tương đối)")
         if applied == 0 or drift < 1e-6:
             log("CẢNH BÁO: model KHÔNG thay đổi trong epoch này -> kết quả eval sẽ y hệt model gốc. "
-                "Thử --no-fp16 hoặc tăng --lr")
+                "Thử --amp none hoặc tăng --lr")
         rd, hn = evaluate()
         rd.update(epoch=epoch, loss=tot_loss / max(tot_frames, 1), drift=drift, applied=applied)
         broken = [k for k in state.get("keep_ids") or [] if k in hn and utt_errors(*hn[k])[0] > 0]
@@ -1210,9 +1225,12 @@ def main():
     g.add_argument("--ctc-scale", type=float, default=0.1, help="giữ đầu CTC của model gốc cùng học (0 = bỏ)")
     g.add_argument("--speed-new", default="1.0,0.9,1.1", help="speed perturb dữ liệu mới, mỗi epoch 1 mức (luân phiên)")
     g.add_argument("--feat-aug-p", type=float, default=0.3, help="xác suất nhiễu + gain trên fbank mỗi câu")
-    g.add_argument("--no-fp16", dest="fp16", action="store_false")
+    g.add_argument("--amp", choices=["auto", "bf16", "fp16", "none"], default="auto",
+                   help="auto = bf16 nếu GPU hỗ trợ (A100/L4/H100), không thì fp32 (T4/P100). fp16: model 150M bị tràn "
+                        "số (grad inf) trên T4 -> không học")
+    g.add_argument("--no-fp16", dest="amp", action="store_const", const="none", help="= --amp none")
     g.add_argument("--fp16-check", type=int, default=50,
-                   help="nếu ngần này batch đầu mỗi epoch đều bị GradScaler bỏ (grad inf) -> tự chuyển fp32")
+                   help="--amp fp16: sau ngần này batch mà > 20%% batch bị GradScaler bỏ (grad inf) -> tự chuyển fp32")
     g.add_argument("--select", choices=["mean", "new", "hard", "old"], default="mean", help="chọn epoch theo WER này")
     g.add_argument("--max-old-degrade", type=float, default=0.01,
                    help="loại epoch có WER dev_old > model gốc + ngưỡng (tuyệt đối, 0.01 = 1 điểm WER)")
