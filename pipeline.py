@@ -506,7 +506,7 @@ def asr_with_prefetch(a, item, asr, paths, llm, tools, catalog, pools, trace, co
     if not (a.prefetch and llm is not None):
         return wls, keeps, fell, names, []
     pass1 = [" ".join(w for w, _ in wl) for wl in wls]
-    msgs1, _ = fit_messages(item, pass1, llm, tools)
+    msgs1, _ = fit_messages(item, pass1, llm, tools, a.max_len)
     done, ents = prefetch_entities(llm, msgs1, tools, catalog, env, trace, common)
     if pools is not None:
         for name, args, res in done:  # tên đã đọc được cũng dùng để snap search key của tool call
@@ -523,11 +523,11 @@ def asr_with_prefetch(a, item, asr, paths, llm, tools, catalog, pools, trace, co
     return wls, keeps, fell, names, done
 
 
-def fit_messages(item, texts, llm, tools):
-    """build_messages, bỏ bớt lượt history cũ nhất tới khi vừa ngữ cảnh. -> (msgs, keep)."""
+def fit_messages(item, texts, llm, tools, max_len=MAX_CTX):
+    """build_messages, bỏ bớt lượt history cũ nhất tới khi vừa ngữ cảnh (max_len = max_model_len của LLM). -> (msgs, keep)."""
     keep = len(texts) - 1
     msgs = build_messages(item, texts, keep)
-    while keep and llm.n_tokens(msgs, tools) > MAX_CTX - MAX_NEW * 2:
+    while keep and llm.n_tokens(msgs, tools) > max_len - MAX_NEW * 2:
         keep -= 1
         msgs = build_messages(item, texts, keep)
     return msgs, keep
@@ -613,6 +613,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", required=True, help="folder holding the split folders")
     ap.add_argument("--split", default="public_test")
+    ap.add_argument("--tools-dir", default=None,
+                    help="thư mục CHỨA package zaic_tools (mặc định tự tìm trong root/split, root/train, root)")
     ap.add_argument("--out", default="submission.jsonl")
     ap.add_argument("--zipformer", default=ZIPFORMER_MODEL, help="Zipformer HF id or local (fine-tuned) folder (sherpa-onnx files)")
     ap.add_argument("--zipformer-threads", type=int, default=4)
@@ -650,6 +652,8 @@ def main():
     ap.add_argument("--llm-backend", choices=["vllm", "hf"], default="vllm",
                     help="hf = transformers (chạy được trên CPU khi không có GPU/vLLM; chậm, xử lý từng câu)")
     ap.add_argument("--gpu-mem", type=float, default=0.7, help="main LLM gpu_memory_utilization")
+    ap.add_argument("--max-len", type=int, default=MAX_CTX,
+                    help="max_model_len của LLM chính; history cũ bị cắt cho vừa. GPU thiếu bộ nhớ KV cache -> giảm (vd. 8192)")
     ap.add_argument("--mapper-gpu-mem", type=float, default=0.1, help="mapper gpu_memory_utilization")
     ap.add_argument("--eager", action="store_true", help="vLLM enforce_eager: skip CUDA graphs (slower, avoids capture errors)")
     ap.add_argument("--verify-rounds", type=int, default=VERIFY_ROUNDS)
@@ -685,10 +689,20 @@ def main():
     LLMClass = HFLLM if a.llm_backend == "hf" else VLLM
 
     def make_llm(device, *args):  # device: GPU riêng cho LLM này (process con), None = GPU mặc định, cùng process
-        return RemoteVLLM(device, *args, backend=a.llm_backend) if device is not None else LLMClass(*args)
+        if device is None:
+            return LLMClass(*args)
+        dev = str(device).lower().removeprefix("cuda:").removeprefix("cuda")  # "cuda:1" / "1" -> "1" (CUDA_VISIBLE_DEVICES)
+        if not re.fullmatch(r"\d+(,\d+)*", dev):
+            sys.exit(f"--llm-device / --mapper-device: cần số GPU (0, 1 hoặc cuda:1), nhận {device!r}")
+        return RemoteVLLM(dev, *args, backend=a.llm_backend)
     root = Path(a.root)
-    sys.path.insert(0, str(root / a.split))
     if not a.no_llm or a.prefetch:
+        # zaic_tools (BTC) có thể chỉ nằm trong train/: thử --tools-dir, root/split, root/train, root
+        dirs = [Path(a.tools_dir)] if a.tools_dir else [root / a.split, root / "train", root]
+        found = next((d for d in dirs if (d / "zaic_tools").is_dir() or (d / "zaic_tools.py").is_file()), None)
+        if found is None:
+            sys.exit(f"không tìm thấy zaic_tools trong {[str(d) for d in dirs]}; chỉ đường bằng --tools-dir")
+        sys.path.insert(0, str(found.resolve()))
         from zaic_tools import ToolEnv
     catalog = {t["name"]: t for app in json.load(open(root / a.split / f"{a.split}_tools_catalog.json", encoding="utf-8"))["apps"]
                for t in app["tools"]}
@@ -713,10 +727,10 @@ def main():
         if a.text:
             sys.exit("--no-llm / --mark-only cần ASR, không dùng với --text")
         llm = None if gold or a.mark_only else make_llm(a.llm_device, a.llm, a.llm_lora, a.gpu_mem, a.seed,
-                                                         MAX_CTX if a.prefetch else 4096, 256, {"enable_thinking": False}, a.eager)
+                                                         a.max_len if a.prefetch else 4096, 256, {"enable_thinking": False}, a.eager)
         return run_audio_only(a, items, asr, t_start, llm, cands, catalog)
     m_args = (a.mapper, a.mapper_lora, a.mapper_gpu_mem, a.seed, 2048, 256, {"enable_thinking": False}, a.eager)
-    llm = GoldLLM() if gold else make_llm(a.llm_device, a.llm, a.llm_lora, a.gpu_mem, a.seed, MAX_CTX, MAX_NEW, None, a.eager)
+    llm = GoldLLM() if gold else make_llm(a.llm_device, a.llm, a.llm_lora, a.gpu_mem, a.seed, a.max_len, MAX_NEW, None, a.eager)
     # "same" (hoặc trùng --llm, không LoRA riêng): mapper dùng chung model với LLM chính -> chỉ nạp 1 model lên GPU
     share = a.mapper == "same" or (a.mapper == a.llm and a.mapper_lora == a.llm_lora)
     mapper = None if a.mapper == "none" or gold else llm if share else make_llm(a.mapper_device, *m_args)
@@ -744,7 +758,7 @@ def main():
                 # 2. dialect mapper (không ITN: số giữ dạng chữ, planner tự đổi sang tham số); output rỗng -> giữ câu cũ
                 texts = [m or r for r, m in zip(raw, mapper.chat([mapper_conv(r) for r in raw], None, {"enable_thinking": False}))] if mapper else raw
                 # 3-5. planner <-> verifier -> executor
-                msgs, keep = fit_messages(item, texts, llm, tools)
+                msgs, keep = fit_messages(item, texts, llm, tools, a.max_len)
                 if pre_done:  # tool đọc của bước prefetch đã chạy trên env: planner thấy kết quả, đi tiếp từ đó
                     msgs.append(assistant_msg("", [{"name": n, "arguments": a} for n, a, _ in pre_done]))
                     msgs += [{"role": "tool", "content": clip(r)} for _, _, r in pre_done]
