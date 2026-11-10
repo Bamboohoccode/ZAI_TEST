@@ -15,7 +15,8 @@ Repo dự án **LifeMate** cho Zalo AI Challenge 2026: agent nhận giọng nói
 │   ├── asr_zipformer.py     #   ZipformerASR(hotwords_file=, lm=, vad=) — offline; transcribe(words=True) -> (từ, conf)
 │   ├── candidates.py        #   đánh dấu từ conf thấp + ứng viên gần âm, prompt LLM sửa
 │   ├── vad.py               #   silero VAD (trim khoảng lặng)
-│   └── eval_asr.py          #   dump train (bước A) + WER held-out theo cấu hình (greedy/beam/hw/vad/lm)
+│   ├── eval_asr.py          #   dump train (bước A) + WER held-out theo cấu hình (greedy/beam/hw/vad/lm)
+│   └── finetune_zipformer.py #  fine-tune 150M trên câu pipeline (--no-llm --prefetch) nhận sai, trộn 95% dữ liệu cũ
 ├── hotwords/                # biasing: hotword + snap search key của tool
 │   ├── bias.py              #   hotword lines, snap_value, phon
 │   ├── mine_hotwords.py     #   khai thác hotword từ lỗi ASR trên train

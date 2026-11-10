@@ -1,4 +1,4 @@
-"""Voice agent: Zipformer ASR (+RNNLM) -> đánh dấu từ conf thấp -> LLM refine -> Qwen3-0.6B dialect mapper
+"""Voice agent: Zipformer ASR (+RNNLM) -> đánh dấu từ conf thấp -> [LLM refine, chỉ khi --refine] -> Qwen3-0.6B dialect mapper
 -> Qwen3-4B planner <-> verifier -> zaic_tools. Sơ đồ: docs/asr_workflow.png, chi tiết: docs/PIPELINE.md.
 
 pip install -r requirements.txt     # cần asr_assets.zip (lm/rnnlm/rnnlm.onnx, data/asr_train_plain.jsonl) giải nén ở gốc repo
@@ -7,7 +7,7 @@ python pipeline.py --root DATA --split public_test --lm lm/rnnlm/rnnlm.onnx --lm
     --conf-thr 0.6 --out submission.jsonl                              # full pipeline
 python pipeline.py --root DATA --split train --lm lm/rnnlm/rnnlm.onnx --mark-only --limit 300
     # chỉ đánh dấu (không LLM, không GPU): in WER + bảng chọn --conf-thr (tỉ lệ đánh dấu / bắt được lỗi / precision)
-python pipeline.py --root DATA --split train --lm lm/rnnlm/rnnlm.onnx --no-llm --limit 200   # ASR -> refine, in WER
+python pipeline.py --root DATA --split train --lm lm/rnnlm/rnnlm.onnx --no-llm --refine --limit 200   # ASR -> refine, in WER
 python pipeline.py --root DATA --split train --text --llm gold --mapper none --limit 50   # bỏ ASR, replay nhãn, không GPU
 """
 import argparse
@@ -564,7 +564,7 @@ def run_audio_only(a, items, asr, t_start, llm=None, cands=None, catalog=None):
             wls, keeps, fell, names, _ = asr_with_prefetch(a, item, asr, paths, llm, tool_specs(item, catalog) if a.prefetch else [],
                                                            catalog, None, trace, common, env)
             asr_out = [" ".join(w for w, _ in wl) for wl in wls]
-            fix, marked = refine(llm, wls, cands, a.conf_thr, a.cand_k, keep=keeps, names=names)
+            fix, marked = refine(llm if a.refine else None, wls, cands, a.conf_thr, a.cand_k, keep=keeps, names=names)
             rows = []
             for k, (u, wl, r0, r1, r2) in enumerate(zip(turns, wls, asr_out, marked, fix)):
                 row = {"turn": "QUERY" if k == len(turns) - 1 else f"u{k + 1}", "audio": u["audio"], "asr": r0,
@@ -595,12 +595,12 @@ def run_audio_only(a, items, asr, t_start, llm=None, cands=None, catalog=None):
             fout.write(json.dumps({"id": item["id"], "turns": rows}, ensure_ascii=False) + "\n")
             n_mark = sum("[" in m for m in marked)
             print(f"[{i + 1}/{len(items)}] {item['id']} {len(rows)} lượt, đánh dấu {n_mark} "
-                  f"{time.time() - t0:.1f}s | {rows[-1]['marked' if llm is None else 'refine'][:120]}", flush=True)
+                  f"{time.time() - t0:.1f}s | {rows[-1]['refine' if a.refine and llm is not None else 'marked'][:120]}", flush=True)
     total = time.time() - t_start
     print(f"\n{len(items)} samples -> {a.out} | avg {total / max(len(items), 1):.1f}s/sample")
     if tot["asr"][1]:
         print(f"WER dạng đọc, ASR thô        : {tot['asr'][0] / tot['asr'][1]:.4f}")
-        if llm is not None:
+        if llm is not None and a.refine:
             print(f"WER dạng đọc, sau LLM refine : {tot['refine'][0] / tot['refine'][1]:.4f}")
     if n_words:
         if n_sure == n_words:
@@ -639,6 +639,9 @@ def main():
     ap.add_argument("--beam", type=int, default=4, help="max_active_paths của modified_beam_search")
     ap.add_argument("--mark-only", action="store_true",
                     help="chỉ đánh dấu [từ|ứng viên...], không gọi LLM (duyệt ứng viên + chọn --conf-thr, không cần GPU); kéo theo --no-llm")
+    ap.add_argument("--refine", action="store_true",
+                    help="bật LLM refine câu ASR (mặc định TẮT: trên train, refine làm WER dạng đọc tăng 11.6%% -> 15.0%% "
+                         "và đổi nghĩa số / thời gian / hành động / phủ định); tắt thì vẫn đánh dấu `marked`, chỉ không gọi LLM sửa")
     ap.add_argument("--conf-thr", type=float, default=0.6, help="từ có confidence < ngưỡng thì đánh dấu cho LLM sửa")
     ap.add_argument("--cand-k", type=int, default=3, help="số ứng viên mỗi từ")
     ap.add_argument("--cand-train", default=str(Path(__file__).resolve().parent / "data" / "asr_train_plain.jsonl"),
@@ -728,7 +731,8 @@ def main():
     if a.no_llm:
         if a.text:
             sys.exit("--no-llm / --mark-only cần ASR, không dùng với --text")
-        llm = None if gold or a.mark_only else make_llm(a.llm_device, a.llm, a.llm_lora, a.gpu_mem, a.seed,
+        # LLM ở chế độ audio-only chỉ cần cho --refine hoặc --prefetch
+        llm = None if gold or a.mark_only or not (a.refine or a.prefetch) else make_llm(a.llm_device, a.llm, a.llm_lora, a.gpu_mem, a.seed,
                                                          a.max_len if a.prefetch else 4096, 256, {"enable_thinking": False}, a.eager)
         return run_audio_only(a, items, asr, t_start, llm, cands, catalog)
     m_args = (a.mapper, a.mapper_lora, a.mapper_gpu_mem, a.seed, 2048, 256, {"enable_thinking": False}, a.eager)
@@ -754,8 +758,10 @@ def main():
                     paths = [root / a.split / u["audio"] for u in turns]
                     wls, keeps, fell, names, pre_done = asr_with_prefetch(a, item, asr, paths, None if gold else llm, tools,
                                                                           catalog, pools, trace, common, env)
-                    raw, marked = refine(None if gold else llm, wls, cands, a.conf_thr, a.cand_k, keep=keeps, names=names)
-                    trace.extend({"refine": {"marked": m, "to": t}} for m, t in zip(marked, raw) if "[" in m)
+                    raw, marked = refine(llm if a.refine and not gold else None, wls, cands, a.conf_thr, a.cand_k,
+                                         keep=keeps, names=names)
+                    if a.refine:
+                        trace.extend({"refine": {"marked": m, "to": t}} for m, t in zip(marked, raw) if "[" in m)
                     trace.extend({"bias_fallback": k} for k, f in enumerate(fell) if f)
                 # 2. dialect mapper (không ITN: số giữ dạng chữ, planner tự đổi sang tham số); output rỗng -> giữ câu cũ
                 texts = [m or r for r, m in zip(raw, mapper.chat([mapper_conv(r) for r in raw], None, {"enable_thinking": False}))] if mapper else raw
