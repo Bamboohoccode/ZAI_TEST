@@ -139,8 +139,15 @@ REFINE_SHOTS = [
 ]
 
 
-def refine_conv(marked, context=()):
+NAMES_HINT = ("Tên có trong dữ liệu của người dùng (quán, người, cuộc họp, kênh...): {names}\n"
+              "Cụm nào trong câu ĐỌC GẦN GIỐNG một tên ở trên (kể cả tên nước ngoài bị phiên âm, ví dụ \"quán xì ta búc\" -> "
+              "\"quán starbucks\") thì thay bằng tên đó, viết chữ thường. Không dùng tên nào không có trong danh sách.\n\n")
+
+
+def refine_conv(marked, context=(), names=()):
     user = marked if not context else "Các câu trước (chỉ để tham khảo):\n" + "\n".join(context) + "\n\nCâu cần sửa:\n" + marked
+    if names:
+        user = NAMES_HINT.format(names=", ".join(names)) + ("Câu cần sửa:\n" + marked if not context else user)
     shots = [m for q, a in REFINE_SHOTS for m in ({"role": "user", "content": q}, {"role": "assistant", "content": a})]
     return [{"role": "system", "content": REFINE_SYSTEM}, *shots, {"role": "user", "content": user}]
 
@@ -159,15 +166,19 @@ def accept_refine(raw, out):
     return out if same >= 0.6 * len(a) else raw
 
 
-def refine(llm, word_lists, cands, thr=0.6, k=3, use_context=True, keep=frozenset()):
+def refine(llm, word_lists, cands, thr=0.6, k=3, use_context=True, keep=frozenset(), names=None):
     """word_lists: [[(từ, conf)]] các lượt của một sample (history trước, query cuối). keep: xem Candidates.mark.
-    Trả (texts, marked): chỉ gọi LLM cho lượt có từ được đánh dấu, gọi một lô."""
+    names: [list tên | None] mỗi lượt (vd. tên lấy từ tool đọc --prefetch): đưa vào prompt, và lượt có tên luôn được
+    gửi LLM dù không có từ nào bị đánh dấu (tên nước ngoài hay bị nghe sai với conf cao: "taipei" -> "tay").
+    Trả (texts, marked): chỉ gọi LLM cho lượt có từ được đánh dấu (hoặc có tên), gọi một lô."""
+    names = names or [None] * len(word_lists)
     raws = [" ".join(w for w, _ in wl) for wl in word_lists]
-    marked = [cands.mark(wl, thr, k, keep) for wl in word_lists]
-    idx = [i for i, (_, n) in enumerate(marked) if n]
+    keeps = keep if isinstance(keep, list) else [keep] * len(word_lists)  # list = keep riêng cho từng lượt
+    marked = [cands.mark(wl, thr, k, kp) for wl, kp in zip(word_lists, keeps)]
+    idx = [i for i, (_, n) in enumerate(marked) if n or names[i]]
     texts = list(raws)
     if idx and llm is not None:
-        convs = [refine_conv(marked[i][0], raws[max(0, i - 2):i] if use_context else ()) for i in idx]
+        convs = [refine_conv(marked[i][0], raws[max(0, i - 2):i] if use_context else (), names[i] or ()) for i in idx]
         # tắt thinking cho refine (planner dùng chung LLM có thể đang bật) -> không suy luận / dịch sang tiếng Anh
         takes_kw = "chat_kwargs" in inspect.signature(llm.chat).parameters
         outs = llm.chat(convs, chat_kwargs=NO_THINK) if takes_kw else llm.chat(convs)

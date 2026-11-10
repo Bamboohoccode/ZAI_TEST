@@ -103,6 +103,70 @@ def build_lexicon(item=None, glossary=GLOSSARY):
     prof = ((item or {}).get("context") or {}).get("user_profile") or {}
     ents += [prof[k] for k in PROFILE_KEYS if isinstance(prof.get(k), str)]
     ents += glossary
+    return _dedup(ents)
+
+
+def text_entities(text, common=frozenset()):
+    """cụm viết hoa trong câu tự do (audio_text / text của assistant): tên người, địa điểm, thương hiệu, viết tắt.
+    Cụm = các từ liền nhau (không xen dấu câu) mở đầu bằng chữ hoa; số đứng sau tên được giữ (Cơm tấm Sài Gòn 168 ->
+    'Sài Gòn 168'). Từ viết hoa vì đứng đầu câu (Đặt, Dạ, Em...) bị bỏ khi là từ thường (`common`) hoặc đứng một mình."""
+    out, run, start = [], [], True
+
+    def flush():
+        words = list(run)
+        while words and words[-1].isdigit():
+            words.pop()
+        if words and run_start and not any(c.isupper() for c in words[0][1:]) and (words[0].lower() in common or len(words) == 1):
+            words = words[1:]  # chữ hoa vì đứng đầu câu, không phải tên (viết tắt SJC, VietQR, S+ thì giữ)
+        if words:
+            out.append(" ".join(words))
+
+    run_start = False
+    for tok in re.findall(r"[\w+&'-]+|[^\w\s]", text or ""):
+        if re.fullmatch(r"[^\w\s]", tok) and tok not in "+&":
+            if run:
+                flush()
+                run = []
+            start = tok in ".!?;:\"“(…" or start and tok in "-–—"
+            continue
+        cap = tok[:1].isupper()
+        if cap or (run and tok.isdigit()):
+            if not run:
+                run_start = start
+            run.append(tok)
+        elif run:
+            flush()
+            run = []
+        start = False
+    if run:
+        flush()
+    return out
+
+
+def lexicons_per_turn(item, glossary=GLOSSARY, common=frozenset()):
+    """[lexicon] cho từng lượt user của item theo thứ tự [u1, u2, ..., QUERY].
+    Lượt k CHỈ thấy: context (user_profile...) + mọi entry history ĐỨNG TRƯỚC lượt k (audio_text các lượt user trước,
+    text / tool call / kết quả tool của assistant trước). Không đọc audio_text của chính lượt k và các lượt sau, không đọc label."""
+    ctx = []
+    prof = (item.get("context") or {}).get("user_profile") or {}
+    ctx += [prof[k] for k in PROFILE_KEYS if isinstance(prof.get(k), str)]
+    _walk(item.get("context") or {}, ctx)
+    hist = item.get("history") or []
+    out, seen_ents = [], []
+    for h in hist + [None]:  # None = QUERY (đứng sau toàn bộ history)
+        if h is None or h.get("role") == "user":
+            out.append(_dedup(ctx + seen_ents + glossary))
+        if h is None:
+            break
+        # sau khi lượt này đã được decode, nội dung của nó mới được dùng cho các lượt sau
+        seen_ents += text_entities(h.get("audio_text") or h.get("text") or "", common)
+        for _, args, res in _history_calls({"history": [h]}):
+            _walk(args, seen_ents)
+            _walk(res, seen_ents)
+    return out
+
+
+def _dedup(ents):
     seen, out = set(), []
     for e in ents:
         e = " ".join(str(e).split())

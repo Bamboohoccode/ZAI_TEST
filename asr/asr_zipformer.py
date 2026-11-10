@@ -75,6 +75,8 @@ class ZipformerASR:
         self.hi, self.lo, self.glossary_score = hi, lo, glossary_score  # điểm hotword mặc định (xem bias.hotword_lines)
         tokens = _ensure_tokens(d)
         kw = {}
+        # hotword cố định: sherpa-onnx thay toàn bộ hotword của file bằng hotword truyền theo stream -> tự nối lại khi có bias
+        self.global_hw = Path(hotwords_file).read_text(encoding="utf-8").strip() if hotwords_file else ""
         if hotwords_file:
             if not Path(hotwords_file).exists():
                 raise FileNotFoundError(hotwords_file)
@@ -116,6 +118,8 @@ class ZipformerASR:
             hw = fmt(hotwords, score) if score is not None else hotword_lines(
                 hotwords, self.hi if hi is None else hi, self.lo if lo is None else lo,
                 self.glossary_score if glossary_score is None else glossary_score)
+            if hw and self.global_hw:
+                hw = hw + "\n" + self.global_hw
         streams = []
         for p in paths:
             x, sr = sf.read(str(p), dtype="float32")

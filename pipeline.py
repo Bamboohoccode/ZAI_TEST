@@ -23,7 +23,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hotwords.bias import add_to_pool, app_pools, build_lexicon, snap_value, tokens  # noqa: E402
+from hotwords.bias import _dedup, _walk as walk_entities, add_to_pool, app_pools, build_lexicon, common_words, lexicons_per_turn, snap_value, text_entities, tokens  # noqa: E402
 from asr.candidates import Candidates, refine  # noqa: E402
 
 ZIPFORMER_MODEL = "hynt/ZipFormer-150M-CR-CTC-RNNT-6000h"
@@ -240,6 +240,62 @@ class VLLM:
         torch.cuda.empty_cache()
 
 
+class HFLLM:
+    """transformers thay cho vLLM (máy không có GPU / vLLM): cùng giao diện VLLM, greedy, xử lý từng conv một.
+    gpu_mem / seed / max_len / eager bỏ qua (giữ chữ ký để dùng thay VLLM)."""
+
+    def __init__(self, name, lora, gpu_mem, seed, max_len, max_new, chat_kwargs=None, eager=False):
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        self.torch = torch
+        self.dev = "cuda" if torch.cuda.is_available() else "cpu"
+        self.tok = AutoTokenizer.from_pretrained(name)
+        self.m = AutoModelForCausalLM.from_pretrained(name, dtype=torch.bfloat16).to(self.dev).eval()
+        if lora:
+            from peft import PeftModel
+            self.m = PeftModel.from_pretrained(self.m, lora).eval()
+        self.max_new, self.kw, self.prefix = max_new, chat_kwargs, {}
+
+    def n_tokens(self, msgs, tools):
+        text = self.tok.apply_chat_template(msgs, tools=tools, add_generation_prompt=True, tokenize=False, **(self.kw or {}))
+        return len(self.tok.encode(text, add_special_tokens=False))
+
+    def _ids(self, conv, tools, kw, gen):
+        text = self.tok.apply_chat_template(conv, tools=tools, add_generation_prompt=gen, tokenize=False, **kw)
+        return self.tok(text, return_tensors="pt", add_special_tokens=False)["input_ids"]
+
+    def chat(self, convs, tools=None, chat_kwargs=None):
+        """Cache KV phần đầu chung (mọi message trừ message user cuối): refine dùng chung system + ví dụ mẫu cho mọi câu,
+        trên CPU phần đọc prompt tốn nhất nên chỉ tính một lần."""
+        import copy
+        kw = chat_kwargs or self.kw or {}
+        outs = []
+        for c in convs:
+            ids = self._ids(c, tools, kw, True)
+            pre = self._ids(c[:-1], tools, kw, False) if len(c) > 1 else None
+            cache = None
+            if pre is not None and pre.shape[1] < ids.shape[1] and self.torch.equal(ids[0, :pre.shape[1]], pre[0]):
+                key = (tuple(pre[0].tolist()))
+                if key not in self.prefix:
+                    if len(self.prefix) >= 4:
+                        self.prefix.pop(next(iter(self.prefix)))
+                    with self.torch.no_grad():
+                        self.prefix[key] = self.m(pre.to(self.dev), use_cache=True).past_key_values
+                cache = copy.deepcopy(self.prefix[key])
+            with self.torch.no_grad():
+                o = self.m.generate(ids.to(self.dev), attention_mask=self.torch.ones_like(ids).to(self.dev),
+                                    past_key_values=cache, max_new_tokens=self.max_new, do_sample=False,
+                                    temperature=None, top_p=None, top_k=None)
+            # giữ <tool_call> (token thêm vào vocab), chỉ bỏ token kết thúc
+            out = self.tok.decode(o[0, ids.shape[1]:], skip_special_tokens=False)
+            outs.append(re.sub(r"<\|(im_end|endoftext)\|>", "", out).strip())
+        return outs
+
+    def close(self):
+        del self.m
+        gc.collect()
+
+
 def _vllm_worker(conn, device, args):
     os.environ["CUDA_VISIBLE_DEVICES"] = str(device)  # before torch/vllm are imported in this fresh process
     try:
@@ -331,8 +387,9 @@ def snap_search_keys(call, pools, trace):
             trace.append({"snap": {"tool": call["name"], "arg": k, "from": old, "to": new}})
 
 
-def run_agent(env, llm, msgs, tools, catalog, trace, rounds=VERIFY_ROUNDS, deadline=float("inf"), pools=None):
-    done = set()
+def run_agent(env, llm, msgs, tools, catalog, trace, rounds=VERIFY_ROUNDS, deadline=float("inf"), pools=None, pre_done=()):
+    """pre_done: [(tool, args, result)] đã chạy trên env trước đó (--prefetch), đã có trong msgs: không gọi lại tool đọc đó."""
+    done = {json.dumps({"name": n, "arguments": a}, sort_keys=True, ensure_ascii=False) for n, a, _ in pre_done}
     for _ in range(MAX_STEPS):
         if time.time() > deadline:  # keep the calls that already ran
             trace.append({"error": "time limit"})
@@ -371,12 +428,110 @@ def run_agent(env, llm, msgs, tools, catalog, trace, rounds=VERIFY_ROUNDS, deadl
 THR_SWEEP = (0.4, 0.5, 0.6, 0.7, 0.8)
 
 
+def decode_turns(asr, paths, lexs=None, fallback=0.6, plain=None):
+    """ASR các lượt; lexs[k] = hotword riêng của lượt k (None = không bias). Các lượt cùng hotword decode chung một lô.
+    fallback > 0: lượt có bias ra ít hơn fallback * số từ của bản không bias (hotword khớp nửa chừng làm cụt câu) -> dùng
+    bản không bias (`plain`: kết quả không bias đã có sẵn, None = tự decode). -> (wls, keeps, fell)."""
+    if not lexs:
+        wls = run_asr(asr, paths, None)
+        return wls, [frozenset()] * len(paths), [False] * len(paths)
+    wls, groups = [None] * len(paths), {}
+    for k, lx in enumerate(lexs):
+        groups.setdefault(tuple(lx), []).append(k)
+    for lx, ks in groups.items():
+        for k, wl in zip(ks, run_asr(asr, [paths[k] for k in ks], list(lx) or None)):
+            wls[k] = wl
+    keeps, fell = [hotword_words(lx) for lx in lexs], [False] * len(paths)
+    if fallback > 0:
+        for k, pl in enumerate(plain or run_asr(asr, paths, None)):
+            if len(wls[k]) < fallback * len(pl):
+                wls[k], keeps[k], fell[k] = pl, frozenset(), True
+    return wls, keeps, fell
+
+
+# ---------------------------------------------------------------- prefetch: LLM gọi tool đọc 1 lần -> tên trong kết quả làm hotword
+
+PREFETCH = """[CHUẨN BỊ] Câu cuối của người dùng là bản nhận dạng giọng nói, tên riêng (quán, món, người, kênh, địa điểm,
+cuộc họp...) có thể bị nghe sai. Bước đầu của việc thực hiện yêu cầu: gọi các tool ĐỌC mà yêu cầu THẬT SỰ cần (để tìm đúng
+đối tượng hoặc lấy ID cho bước sau), ví dụ danh sách quán khi đặt món, danh bạ khi nhắn / gọi ai đó, danh sách cuộc họp khi
+vào cuộc họp. Các lần gọi này được tính là một phần của việc thực hiện yêu cầu: không gọi tool không liên quan.
+Chỉ gọi tool đọc, không gọi tool ghi, không giải thích. Yêu cầu không cần đọc dữ liệu (trò chuyện, đã huỷ...) thì không gọi tool."""
+MAX_PREFETCH_CALLS = 4
+MAX_PREFETCH_ENTS = 120
+
+
+def prefetch_entities(llm, msgs, tools, catalog, env, trace, common=frozenset()):
+    """Planner xem bản ASR lượt 1 và gọi tool đọc liên quan (tối đa MAX_PREFETCH_CALLS) trên `env` của sample (env thật:
+các lần gọi nằm trong tool_calls của bài nộp và state hash) -> [(tool, args, result)] và list tên (ENTITY_KEYS) trong kết
+quả để làm hotword cho lần decode lại và đưa vào prompt refine."""
+    reads = [t for t in tools if catalog.get(t["function"]["name"], {}).get("kind") == "read"]
+    if not reads:
+        return [], []
+    out = llm.chat([msgs + [{"role": "user", "content": PREFETCH}]], reads)[0]
+    calls = [c for c in parse_calls(out) if catalog.get(c["name"], {}).get("kind") == "read"][:MAX_PREFETCH_CALLS]
+    if not calls:
+        trace.append({"prefetch": {"calls": [], "entities": []}})
+        return [], []
+    done, ents = [], []
+    for c in calls:
+        if not env.validate(c["name"], c["arguments"]).get("ok"):
+            continue
+        r = env.call(c["name"], c["arguments"])
+        if isinstance(r, dict) and r.get("ok") is not False:
+            done.append((c["name"], c["arguments"], r))
+            walk_entities(r, ents)
+    ents = [" ".join(str(e).split()) for e in ents if str(e).strip()]
+    # chuỗi dài (tiêu đề lịch / cuộc họp: "Gọi video với Hằng ở Taipei") -> thêm tên riêng bên trong (Hằng, Taipei)
+    ents += [x for e in ents if len(e.split()) > 3 for x in text_entities(e, common)]
+    ents = list(dict.fromkeys(ents))[:MAX_PREFETCH_ENTS]
+    trace.append({"prefetch": {"calls": [{"name": n, "arguments": a} for n, a, _ in done], "entities": ents}})
+    return done, ents
+
+
+def asr_with_prefetch(a, item, asr, paths, llm, tools, catalog, pools, trace, common, env=None):
+    """ASR mọi lượt (bias theo lượt + fallback). --prefetch (llm không None): planner gọi tool đọc liên quan 1 lần trên `env`
+    -> tên trong kết quả thêm vào hotword QUERY -> decode lại QUERY; tên cũng đưa vào prompt refine của QUERY.
+    -> (wls, keeps, fell, names, done): done = [(tool, args, result)] đã chạy trên env, đưa vào hội thoại của planner."""
+    lexs = lexicons_per_turn(item, common=common) if a.bias else None
+    plain = run_asr(asr, paths, None) if a.bias and a.bias_fallback > 0 else None
+    wls, keeps, fell = decode_turns(asr, paths, lexs, a.bias_fallback, plain)
+    names = [None] * len(wls)
+    if not (a.prefetch and llm is not None):
+        return wls, keeps, fell, names, []
+    pass1 = [" ".join(w for w, _ in wl) for wl in wls]
+    msgs1, _ = fit_messages(item, pass1, llm, tools)
+    done, ents = prefetch_entities(llm, msgs1, tools, catalog, env, trace, common)
+    if pools is not None:
+        for name, args, res in done:  # tên đã đọc được cũng dùng để snap search key của tool call
+            add_to_pool(pools, name, args, res)
+    new = [e for e in ents if e.lower() not in {x.lower() for x in lexs[-1]}]
+    if new:
+        lexs[-1] = _dedup(lexs[-1] + new)
+        w2, k2, f2 = decode_turns(asr, paths[-1:], lexs[-1:], a.bias_fallback, plain[-1:] if plain else None)
+        trace.append({"redecode": {"before": pass1[-1], "after": " ".join(w for w, _ in w2[0]),
+                                   "n_new_hotwords": len(new), "fallback": f2[0]}})
+        wls[-1], keeps[-1], fell[-1] = w2[0], k2[0], f2[0]
+    if ents:
+        names[-1] = [e for e in ents if len(e.split()) <= 4]  # tên ngắn; tiêu đề dài đã tách ở prefetch
+    return wls, keeps, fell, names, done
+
+
+def fit_messages(item, texts, llm, tools):
+    """build_messages, bỏ bớt lượt history cũ nhất tới khi vừa ngữ cảnh. -> (msgs, keep)."""
+    keep = len(texts) - 1
+    msgs = build_messages(item, texts, keep)
+    while keep and llm.n_tokens(msgs, tools) > MAX_CTX - MAX_NEW * 2:
+        keep -= 1
+        msgs = build_messages(item, texts, keep)
+    return msgs, keep
+
+
 def hotword_words(lex):
     """từ (viết thường) của các hotword --bias: không đánh dấu cho LLM sửa (xem Candidates.mark)."""
     return frozenset(t for e in lex for t in tokens(e))
 
 
-def run_audio_only(a, items, asr, t_start, llm=None, cands=None):
+def run_audio_only(a, items, asr, t_start, llm=None, cands=None, catalog=None):
     """--no-llm / --mark-only: VAD/ASR(+LM) -> đánh dấu conf thấp -> [LLM refine] cho mọi lượt user (không ITN: số giữ dạng chữ),
     không mapper/planner/tool. Mỗi dòng --out: {"id", "turns": [{"turn", "audio", "asr", "marked", "refine", ["ref"]}]}.
     Split có audio_text (train): in WER (asr thô / sau refine) và bảng chọn --conf-thr: với mỗi ngưỡng,
@@ -385,6 +540,8 @@ def run_audio_only(a, items, asr, t_start, llm=None, cands=None):
     from textnorm.textutil import norm, wer_counts
     from textnorm.vi_num import to_spoken
     root = Path(a.root)
+    # từ thường của tập (để không coi chữ hoa đầu câu là tên riêng khi lấy entity từ text)
+    common = frozenset(common_words(root / a.split / f"{a.split}.jsonl")) if a.bias else frozenset()
     tot = {"asr": [0, 0], "refine": [0, 0]}
     sweep = {t: [0, 0] for t in THR_SWEEP}  # thr -> [marked, marked & sai]
     n_words = n_wrong = n_sure = 0
@@ -392,15 +549,21 @@ def run_audio_only(a, items, asr, t_start, llm=None, cands=None):
         for i, item in enumerate(items):
             t0 = time.time()
             turns = [h for h in item["history"] if h["role"] == "user"] + [item]
-            lex = build_lexicon(item) if a.bias else []
-            wls = run_asr(asr, [root / a.split / u["audio"] for u in turns], lex or None)
+            paths = [root / a.split / u["audio"] for u in turns]
+            trace = []
+            env = ToolEnv(a.split, item["id"], root=str(root)) if a.prefetch else None
+            wls, keeps, fell, names, _ = asr_with_prefetch(a, item, asr, paths, llm, tool_specs(item, catalog) if a.prefetch else [],
+                                                           catalog, None, trace, common, env)
             asr_out = [" ".join(w for w, _ in wl) for wl in wls]
-            keep = hotword_words(lex)
-            fix, marked = refine(llm, wls, cands, a.conf_thr, a.cand_k, keep=keep)
+            fix, marked = refine(llm, wls, cands, a.conf_thr, a.cand_k, keep=keeps, names=names)
             rows = []
             for k, (u, wl, r0, r1, r2) in enumerate(zip(turns, wls, asr_out, marked, fix)):
                 row = {"turn": "QUERY" if k == len(turns) - 1 else f"u{k + 1}", "audio": u["audio"], "asr": r0,
                        "marked": r1, "refine": r2}
+                if fell[k]:
+                    row["bias_fallback"] = True
+                if k == len(turns) - 1 and trace:  # prefetch: tool đọc đã gọi, tên lấy được, ASR trước / sau khi decode lại
+                    row["prefetch"] = trace
                 if u.get("audio_text"):
                     ref = u["audio_text"]
                     row["ref"] = ref
@@ -416,7 +579,7 @@ def run_audio_only(a, items, asr, t_start, llm=None, cands=None):
                     for (w, c), good in zip(wl, ok):
                         n_words, n_wrong, n_sure = n_words + 1, n_wrong + (not good), n_sure + (c >= 0.9999)
                         for t in THR_SWEEP:
-                            if c < t and w not in keep:
+                            if c < t and w not in keeps[k]:
                                 sweep[t][0] += 1
                                 sweep[t][1] += not good
                 rows.append(row)
@@ -453,6 +616,12 @@ def main():
     ap.add_argument("--hotword-lo", type=float, default=1.5, help="hotword score cho cụm thường (đèn bếp, tài khoản thanh toán)")
     ap.add_argument("--glossary-score", type=float, default=1.0, help="score cho từ ngoại viết thường (podcast, voucher...); 0 = không làm hotword (dev: 0 kém hơn)")
     ap.add_argument("--hotwords-file", help="hotword CỐ ĐỊNH (mine_hotwords.py -> hotwords_global.txt), không đọc state.json")
+    ap.add_argument("--bias-fallback", type=float, default=0.6,
+                    help="--bias: lượt có bias ra ít hơn tỉ lệ này số từ của bản không bias (câu bị cụt) -> dùng bản không bias; 0 = tắt")
+    ap.add_argument("--prefetch", action="store_true",
+                    help="sau ASR lượt 1, LLM gọi tool đọc liên quan 1 lần (trên env thật: tính vào tool_calls / state hash) -> tên trong kết quả "
+                         "làm hotword -> decode lại QUERY trước khi refine (kéo theo --bias)")
+    ap.add_argument("--heldout", action="store_true", help="chỉ chạy các sample held-out (số id %% 10 == 9, xem mine_hotwords.py)")
     ap.add_argument("--vad", action="store_true", help="cắt khoảng lặng bằng silero VAD trước Zipformer (vad.py)")
     ap.add_argument("--lm", help="RNNLM onnx cho LM fusion (train_rnnlm.py -> rnnlm/rnnlm.onnx)")
     ap.add_argument("--lm-scale", type=float, default=0.3)
@@ -468,6 +637,8 @@ def main():
     ap.add_argument("--mapper-device", help="GPU index for the mapper, run in its own process (default: share the LLM's GPU)")
     ap.add_argument("--llm", default=LLM_MODEL, help='HF id or local folder, "gold" = replay labels (train)')
     ap.add_argument("--llm-lora")
+    ap.add_argument("--llm-backend", choices=["vllm", "hf"], default="vllm",
+                    help="hf = transformers (chạy được trên CPU khi không có GPU/vLLM; chậm, xử lý từng câu)")
     ap.add_argument("--gpu-mem", type=float, default=0.7, help="main LLM gpu_memory_utilization")
     ap.add_argument("--mapper-gpu-mem", type=float, default=0.1, help="mapper gpu_memory_utilization")
     ap.add_argument("--eager", action="store_true", help="vLLM enforce_eager: skip CUDA graphs (slower, avoids capture errors)")
@@ -481,6 +652,10 @@ def main():
     a = ap.parse_args()
     if a.mark_only:  # chỉ đánh dấu: không LLM, không planner
         a.no_llm = True
+    if a.prefetch:
+        if a.mark_only or a.text or a.llm == "gold":
+            sys.exit("--prefetch cần LLM thật + ASR: không dùng với --mark-only / --text / --llm gold")
+        a.bias = True  # hotword decode lại cần contextual graph của --bias
     if a.no_llm and a.out == "submission.jsonl":  # đừng ghi đè file nộp bằng output không có tool call
         a.out = "asr_out.jsonl"
     gold = a.llm == "gold"
@@ -497,13 +672,17 @@ def main():
         print("There is some problems when setting seed")
         pass
 
+    LLMClass = HFLLM if a.llm_backend == "hf" else VLLM
     root = Path(a.root)
     sys.path.insert(0, str(root / a.split))
-    if not a.no_llm:
+    if not a.no_llm or a.prefetch:
         from zaic_tools import ToolEnv
     catalog = {t["name"]: t for app in json.load(open(root / a.split / f"{a.split}_tools_catalog.json", encoding="utf-8"))["apps"]
                for t in app["tools"]}
     items = [json.loads(l) for l in open(root / a.split / f"{a.split}.jsonl", encoding="utf-8") if l.strip()]
+    if a.heldout:
+        from hotwords.mine_hotwords import is_heldout
+        items = [it for it in items if is_heldout(it["id"])]
     items = items[:a.limit] if a.limit else items
     t_start = time.time()
 
@@ -520,40 +699,43 @@ def main():
     if a.no_llm:
         if a.text:
             sys.exit("--no-llm / --mark-only cần ASR, không dùng với --text")
-        llm = None if gold or a.mark_only else VLLM(a.llm, a.llm_lora, a.gpu_mem, a.seed, 4096, 256, {"enable_thinking": False}, a.eager)
-        return run_audio_only(a, items, asr, t_start, llm, cands)
+        llm = None if gold or a.mark_only else LLMClass(a.llm, a.llm_lora, a.gpu_mem, a.seed, MAX_CTX if a.prefetch else 4096,
+                                                         256, {"enable_thinking": False}, a.eager)
+        return run_audio_only(a, items, asr, t_start, llm, cands, catalog)
     m_args = (a.mapper, a.mapper_lora, a.mapper_gpu_mem, a.seed, 2048, 256, {"enable_thinking": False}, a.eager)
-    mapper = None if a.mapper == "none" or gold else RemoteVLLM(a.mapper_device, *m_args) if a.mapper_device else VLLM(*m_args)
-    llm = GoldLLM() if gold else VLLM(a.llm, a.llm_lora, a.gpu_mem, a.seed, MAX_CTX, MAX_NEW, None, a.eager)
+    mapper = None if a.mapper == "none" or gold else RemoteVLLM(a.mapper_device, *m_args) if a.mapper_device else LLMClass(*m_args)
+    llm = GoldLLM() if gold else LLMClass(a.llm, a.llm_lora, a.gpu_mem, a.seed, MAX_CTX, MAX_NEW, None, a.eager)
+    common = frozenset(common_words(root / a.split / f"{a.split}.jsonl")) if a.bias else frozenset()
     slow, shown_tb = [], False
     with open(a.out, "w", encoding="utf-8") as fout, open(a.out + ".trace.jsonl", "w", encoding="utf-8") as ftr:
         for i, item in enumerate(items):
             t0 = time.time()  # the time limit covers ASR and mapper of this sample too
             env = ToolEnv(a.split, item["id"], root=str(root))
-            trace, raw, texts, keep, pools = [], [], [], 0, None
+            trace, raw, texts, keep, pools, pre_done = [], [], [], 0, None, []
             try:
                 # 1. ASR of every user turn: history first, then the query, in one batch
                 turns = [h for h in item["history"] if h["role"] == "user"] + [item]
+                tools = tool_specs(item, catalog)
                 pools = app_pools(item)  # snap_search_keys: tên trong tool call -> tên đã thấy trong history / kết quả tool
                 if a.text:
                     raw = [u["audio_text"] for u in turns]
-                else:  # ASR(+LM) -> đánh dấu từ conf thấp + ứng viên -> LLM sửa
-                    lex = build_lexicon(item) if a.bias else []
-                    wls = run_asr(asr, [root / a.split / u["audio"] for u in turns], lex or None)
-                    raw, marked = refine(None if gold else llm, wls, cands, a.conf_thr, a.cand_k, keep=hotword_words(lex))
+                else:  # ASR(+LM) -> [prefetch: LLM gọi tool đọc -> tên làm hotword -> decode lại QUERY] -> đánh dấu + LLM sửa
+                    paths = [root / a.split / u["audio"] for u in turns]
+                    wls, keeps, fell, names, pre_done = asr_with_prefetch(a, item, asr, paths, None if gold else llm, tools,
+                                                                          catalog, pools, trace, common, env)
+                    raw, marked = refine(None if gold else llm, wls, cands, a.conf_thr, a.cand_k, keep=keeps, names=names)
                     trace.extend({"refine": {"marked": m, "to": t}} for m, t in zip(marked, raw) if "[" in m)
+                    trace.extend({"bias_fallback": k} for k, f in enumerate(fell) if f)
                 # 2. dialect mapper (không ITN: số giữ dạng chữ, planner tự đổi sang tham số); output rỗng -> giữ câu cũ
                 texts = [m or r for r, m in zip(raw, mapper.chat([mapper_conv(r) for r in raw]))] if mapper else raw
                 # 3-5. planner <-> verifier -> executor
-                tools = tool_specs(item, catalog)
-                keep = len(texts) - 1
-                msgs = build_messages(item, texts, keep)
-                while keep and llm.n_tokens(msgs, tools) > MAX_CTX - MAX_NEW * 2:
-                    keep -= 1
-                    msgs = build_messages(item, texts, keep)
+                msgs, keep = fit_messages(item, texts, llm, tools)
+                if pre_done:  # tool đọc của bước prefetch đã chạy trên env: planner thấy kết quả, đi tiếp từ đó
+                    msgs.append(assistant_msg("", [{"name": n, "arguments": a} for n, a, _ in pre_done]))
+                    msgs += [{"role": "tool", "content": clip(r)} for _, _, r in pre_done]
                 if gold:
                     llm.queue = list(item["label"]["tool_calls"])
-                run_agent(env, llm, msgs, tools, catalog, trace, rounds, pools=pools)
+                run_agent(env, llm, msgs, tools, catalog, trace, rounds, pools=pools, pre_done=pre_done)
             except Exception as e:  # keep what already ran; a crash must still write the line
                 trace.append({"error": f"{type(e).__name__}: {str(e)[:300]}", "traceback": traceback.format_exc()})
                 if not shown_tb:  # full traceback of the first failure in the log; the rest are in the trace file

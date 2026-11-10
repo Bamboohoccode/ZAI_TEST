@@ -58,6 +58,10 @@ _ACR = re.compile(r"\b[A-Z]{2,6}\b")
 _CAP = re.compile(r"(?<![.!?;:]\s)(?<!^)\b([A-ZĐ][\wÀ-ỹ]*(?:\s+[A-ZĐ][\wÀ-ỹ]*)+)")
 _WORD = re.compile(r"[\w'-]+")
 
+NUM_WORDS = set("không một hai ba bốn năm sáu bảy tám chín mười mươi trăm nghìn ngàn triệu tỷ tỉ linh lẻ rưỡi mốt tư lăm".split())
+FUNCTION_WORDS = set("nhé nhá nha nhỉ ạ à ơi ừ ờ á hả với luôn cái thì là mà đi đó đấy này kia vậy thế chứ rồi em anh chị "
+                     "tôi tui mình cho của có không được giúp giùm dùm và các những một".split())
+
 # mã hay gặp, sinh thêm theo mẫu để không chỉ nhớ đúng chuỗi đã thấy trong train
 PATTERN_CODES = ([f"VTV{i}" for i in range(1, 10)] + [f"HTV{i}" for i in range(1, 10)] +
                  [f"SCTV{i}" for i in range(1, 21)] + ["RON92", "RON95", "RON97", "E5", "VOV1", "VOV2", "VOV3"])
@@ -116,6 +120,10 @@ def main():
     ap.add_argument("--name-max", type=float, default=1.5, help="trần score cho tên riêng toàn âm tiết tiếng Việt")
     ap.add_argument("--legit-min", type=int, default=3,
                     help="bỏ cụm nếu cách nghe sai phổ biến nhất là cụm có thật xuất hiện >= n lần trong ref")
+    ap.add_argument("--phrases", action="store_true", help="thêm cụm tiếng Việt 2-3 từ thường gặp mà hay bị nghe sai")
+    ap.add_argument("--phrase-min-occ", type=int, default=5)
+    ap.add_argument("--phrase-max", type=float, default=1.5, help="trần score cho cụm thường")
+    ap.add_argument("--phrase-top", type=int, default=150)
     ap.add_argument("--zipformer", help="thư mục model (bpe.model) để bỏ hotword có ký tự ngoài vocab")
     a = ap.parse_args()
 
@@ -128,6 +136,16 @@ def main():
             cand.setdefault(w, k)
     for c in PATTERN_CODES:
         cand.setdefault(c, "code")
+    if a.phrases:  # cụm tiếng Việt thường gặp (2-3 từ) trong ref dạng đọc: dời lịch, báo thức, đá bóng...
+        cnt = Counter()
+        for _, _, sp, _ in pairs:
+            w = sp.split()
+            for n in (2, 3):
+                cnt.update(tuple(w[i:i + n]) for i in range(len(w) - n + 1))
+        for ph, c in cnt.items():
+            if c >= a.phrase_min_occ and not any(x in NUM_WORDS or x.isdigit() for x in ph) \
+                    and sum(x not in FUNCTION_WORDS for x in ph) >= 2:  # >= 2 từ nội dung
+                cand.setdefault(" ".join(ph), "phrase")
 
     # dạng đọc -> written (một written có nhiều dạng đọc)
     forms = {w: spoken_forms(w, k) for w, k in cand.items()}
@@ -191,6 +209,8 @@ def main():
         if w not in PATTERN_CODES and top and top[0][0] and ngrams[top[0][0]] >= a.legit_min:   # "khách hàn" -> nghe thành "khách hàng" (có thật)
             continue
         cap = a.name_max if st["kind"] == "name" and all(_VI_SYL.match(x) for x in words) else a.max_score
+        if st["kind"] == "phrase":
+            cap = a.phrase_max
         score = round(min(cap, a.base + a.k * rate), 2) if not pattern_only else a.base + 0.5
         # alias: các cách nghe sai lặp lại >= 2 lần, không phải cụm có thật trong ref
         mis = [h for h, c in st["heard"].most_common() if c >= 2 and h and h not in fs and ngrams[h] == 0][:5]
@@ -204,6 +224,11 @@ def main():
                        "aliases": sorted(set(fs) | set(mis)), "n_occ": st["n_occ"], "n_err": st["n_err"],
                        "err_rate": round(rate, 3), "heard": st["heard"].most_common(8)})
 
+    if a.phrases:  # chỉ giữ phrase_top cụm thường gặp sai nhiều nhất (danh sách dài làm chậm decode, dễ kéo sai)
+        ph = sorted((r for r in report if r["kind"] == "phrase"), key=lambda r: -r["n_err"])[a.phrase_top:]
+        drop = {r["written"] for r in ph}
+        report = [r for r in report if r["written"] not in drop]
+        keep = [k for k in keep if k[0] not in drop]
     report.sort(key=lambda r: (-r["n_err"], r["written"]))
     lines = sorted({f"{f.upper()} :{s}" for _, hot, s in keep for f in hot})
     Path(a.out + ".txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
