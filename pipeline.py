@@ -296,25 +296,27 @@ class HFLLM:
         gc.collect()
 
 
-def _vllm_worker(conn, device, args):
+def _vllm_worker(conn, device, args, backend="vllm"):
     os.environ["CUDA_VISIBLE_DEVICES"] = str(device)  # before torch/vllm are imported in this fresh process
     try:
-        llm = VLLM(*args)
+        llm = (HFLLM if backend == "hf" else VLLM)(*args)
         conn.send("ready")
         while True:
-            conn.send(llm.chat(conn.recv()))
+            op, payload = conn.recv()
+            conn.send(llm.chat(*payload) if op == "chat" else llm.n_tokens(*payload))
     except Exception as e:
         conn.send(e)
 
 
 class RemoteVLLM:
-    """VLLM in a child process pinned to one GPU, so two engines can sit on different cards."""
+    """LLM (vLLM hoặc HF) trong process con chỉ thấy một GPU (`device`): LLM chính và mapper nằm được trên hai card khác nhau
+    (--llm-device / --mapper-device). Cùng giao diện VLLM: chat(convs, tools, chat_kwargs), n_tokens(msgs, tools)."""
 
-    def __init__(self, device, *args):
+    def __init__(self, device, *args, backend="vllm"):
         import multiprocessing as mp
         ctx = mp.get_context("spawn")
         self.conn, child = ctx.Pipe()
-        ctx.Process(target=_vllm_worker, args=(child, device, args), daemon=True).start()
+        ctx.Process(target=_vllm_worker, args=(child, device, args, backend), daemon=True).start()
         self._recv()  # "ready", or the engine's startup error
 
     def _recv(self):
@@ -323,8 +325,12 @@ class RemoteVLLM:
             raise r
         return r
 
-    def chat(self, convs, tools=None):
-        self.conn.send(convs)
+    def chat(self, convs, tools=None, chat_kwargs=None):
+        self.conn.send(("chat", (convs, tools, chat_kwargs)))
+        return self._recv()
+
+    def n_tokens(self, msgs, tools):
+        self.conn.send(("n_tokens", (msgs, tools)))
         return self._recv()
 
 
@@ -635,6 +641,8 @@ def main():
     ap.add_argument("--mapper", default=MAPPER_MODEL, help='HF id or local folder, "none" = off')
     ap.add_argument("--mapper-lora")
     ap.add_argument("--mapper-device", help="GPU index for the mapper, run in its own process (default: share the LLM's GPU)")
+    ap.add_argument("--llm-device", help="GPU index cho LLM chính (planner/verifier/refine), chạy trong process riêng "
+                                         "(mặc định: GPU mặc định, cùng process). Vd. --llm-device 0 --mapper-device 1")
     ap.add_argument("--llm", default=LLM_MODEL, help='HF id or local folder, "gold" = replay labels (train)')
     ap.add_argument("--llm-lora")
     ap.add_argument("--llm-backend", choices=["vllm", "hf"], default="vllm",
@@ -673,6 +681,9 @@ def main():
         pass
 
     LLMClass = HFLLM if a.llm_backend == "hf" else VLLM
+
+    def make_llm(device, *args):  # device: GPU riêng cho LLM này (process con), None = GPU mặc định, cùng process
+        return RemoteVLLM(device, *args, backend=a.llm_backend) if device is not None else LLMClass(*args)
     root = Path(a.root)
     sys.path.insert(0, str(root / a.split))
     if not a.no_llm or a.prefetch:
@@ -699,12 +710,12 @@ def main():
     if a.no_llm:
         if a.text:
             sys.exit("--no-llm / --mark-only cần ASR, không dùng với --text")
-        llm = None if gold or a.mark_only else LLMClass(a.llm, a.llm_lora, a.gpu_mem, a.seed, MAX_CTX if a.prefetch else 4096,
-                                                         256, {"enable_thinking": False}, a.eager)
+        llm = None if gold or a.mark_only else make_llm(a.llm_device, a.llm, a.llm_lora, a.gpu_mem, a.seed,
+                                                         MAX_CTX if a.prefetch else 4096, 256, {"enable_thinking": False}, a.eager)
         return run_audio_only(a, items, asr, t_start, llm, cands, catalog)
     m_args = (a.mapper, a.mapper_lora, a.mapper_gpu_mem, a.seed, 2048, 256, {"enable_thinking": False}, a.eager)
-    mapper = None if a.mapper == "none" or gold else RemoteVLLM(a.mapper_device, *m_args) if a.mapper_device else LLMClass(*m_args)
-    llm = GoldLLM() if gold else LLMClass(a.llm, a.llm_lora, a.gpu_mem, a.seed, MAX_CTX, MAX_NEW, None, a.eager)
+    mapper = None if a.mapper == "none" or gold else make_llm(a.mapper_device, *m_args)
+    llm = GoldLLM() if gold else make_llm(a.llm_device, a.llm, a.llm_lora, a.gpu_mem, a.seed, MAX_CTX, MAX_NEW, None, a.eager)
     common = frozenset(common_words(root / a.split / f"{a.split}.jsonl")) if a.bias else frozenset()
     slow, shown_tb = [], False
     with open(a.out, "w", encoding="utf-8") as fout, open(a.out + ".trace.jsonl", "w", encoding="utf-8") as ftr:
