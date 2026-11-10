@@ -1,5 +1,7 @@
-# Dữ liệu BTC: luật cấm phát tán, không commit
-data/
+# Dữ liệu BTC gốc (audio, jsonl): không commit. File id / phân tích lỗi trong data/ thì commit
+data/*
+!data/asr_sai_nghia_ids.txt
+!data/asr_sai_nghia_chitiet.txt
 
 # Trọng số và output suy luận
 *.safetensors
