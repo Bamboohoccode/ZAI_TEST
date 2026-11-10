@@ -26,12 +26,14 @@ Dữ liệu:
   - --epoch-hours (mặc định 20): ~4 h câu sai -> 95/5 đầy đủ là ~80 h/epoch, quá nặng cho T4. Mỗi epoch chỉ lấy
                  epoch_hours x 5% giờ câu mới (cửa sổ xoay vòng, qua vài epoch đủ mọi câu) + 19 lần chừng đó dữ liệu cũ.
                  --epoch-hours 0 = mọi câu mới mỗi epoch.
-  - dev_new    : mọi lượt user của sample held-out (id % 10 == 9) — không bao giờ vào train. Báo thêm WER riêng
-                 các câu held-out pipeline nhận sai (dev_hard).
+  - dev_new    : bộ đánh giá CỐ ĐỊNH 200 câu, chọn từ sample held-out (id % 10 == 9; thiếu thì bù từ sample khác):
+                 100 câu "fix" = đang sai (có trong --ids-file) + 100 câu "keep" = model gốc nhận đúng. Ghi ra
+                 WORK/data/eval_ids.txt; lần sau truyền --eval-ids <file đó> để đánh giá đúng các câu này. Chỉ các
+                 sample chứa câu đánh giá bị loại khỏi train (cùng người nói), sample held-out còn lại vẫn được train.
   - dev_old    : FLEURS vi test (khác người nói với train) — đo mức "quên".
   Chọn epoch theo TB WER(dev_new, dev_old); epoch nào làm dev_old tệ hơn model gốc quá --max-old-degrade thì loại.
-  dev_keep / dev_fix: lấy từ dev_new theo model gốc (greedy) — --dev-keep-n câu nó đã ĐÚNG, --dev-fix-n câu nó SAI.
-  Epoch làm hỏng > --keep-max-broken câu dev_keep thì loại; hỏng quá ngưỡng --keep-patience epoch liên tiếp thì dừng.
+  Mỗi epoch in: dev_fix sửa được x/100 câu, dev_keep bị hỏng y/100 câu. Epoch làm hỏng nhiều hơn model gốc quá
+  --keep-max-broken câu keep thì loại; hỏng quá ngưỡng --keep-patience epoch liên tiếp thì dừng.
 
 License model gốc cc-by-nc-nd-4.0: không thương mại, KHÔNG chia sẻ weights đã fine-tune.
 """
@@ -239,21 +241,136 @@ def template_cap(rows, cap, thr=0.6):
     return out, len(reps)
 
 
-def select_new(a, sp=None):
-    """asr_out.jsonl -> dữ liệu mới của train-split + tập audio các lượt held-out bị sai (dev_hard).
+def greedy_asr_out(a):
+    """không có --asr-out (chỉ --ids-file): dựng file cùng định dạng output pipeline từ train.jsonl, hyp = greedy model
+    gốc (dùng để chọn cách đọc số cho nhãn và tìm câu đúng làm điểm neo). Cache ở WORK/data/asr_greedy.jsonl."""
+    out = Path(a.work) / "data" / "asr_greedy.jsonl"
+    if out.exists():
+        log(f"dùng lại {out}")
+        return out
+    from asr.asr_zipformer import ZipformerASR
+    root = Path(a.root) / a.split
+    items = read_jsonl(root / f"{a.split}.jsonl")
+    asr = ZipformerASR(a.zipformer, int8=True, bias=False, decoding="greedy_search", num_threads=os.cpu_count() or 4)
+    rows, t0 = [], time.time()
+    for i, it in enumerate(items):
+        us = [h for h in it.get("history", []) if h.get("role") == "user"] + [it]
+        us = [u for u in us if u.get("audio") and (root / u["audio"]).exists()]
+        hyps = asr.transcribe([root / u["audio"] for u in us]) if us else []
+        rows.append({"id": it["id"], "turns": [
+            {"turn": "QUERY" if u is it else f"u{k + 1}", "audio": u["audio"], "asr": h, "refine": h,
+             "ref": u.get("audio_text")} for k, (u, h) in enumerate(zip(us, hyps))]})
+        if (i + 1) % 100 == 0:
+            log(f"  greedy {i + 1}/{len(items)} sample, {time.time() - t0:.0f}s")
+    write_jsonl(out, rows)
+    log(f"greedy model gốc trên {len(rows)} sample -> {out}")
+    return out
+
+
+def load_ids(a):
+    """--ids-file -> set id lượt (tên file audio không đuôi: train_0008, train_0008_u2); cột thêm / .wav / '#' bỏ qua."""
+    if not a.ids_file:
+        return None
+    ids = {Path(l.split()[0]).stem for l in open(a.ids_file, encoding="utf-8") if l.strip() and not l.startswith("#")}
+    log(f"--ids-file: {len(ids)} id lượt sai")
+    return ids
+
+
+def build_eval(a, ids):
+    """bộ đánh giá CỐ ĐỊNH lấy từ sample held-out (id % 10 == 9): --eval-fix-n câu đang SAI (có trong --ids-file; không có
+    --ids-file thì greedy model gốc sai) + --eval-keep-n câu model gốc nhận ĐÚNG (canh việc làm hỏng câu vốn đúng).
+    Ghi ra --eval-ids ("fix train_0019" / "keep train_0029_u1"); file đã có -> dùng lại y nguyên, không chọn lại.
+    -> (rows dev_new, tập sample bị loại khỏi train = các sample chứa câu đánh giá)."""
+    root = Path(a.root) / a.split
+    eval_file = Path(a.eval_ids) if a.eval_ids else Path(a.work) / "data" / "eval_ids.txt"
+    utts = {}
+    for r in read_jsonl(root / f"{a.split}.jsonl"):
+        for u in [h for h in r.get("history", []) if h.get("role") == "user"] + [r]:
+            if u.get("audio") and u.get("audio_text") and (root / u["audio"]).exists():
+                stem = Path(u["audio"]).stem
+                utts.setdefault(stem, {"id": "dev_" + stem, "stem": stem, "audio": str((root / u["audio"]).resolve()),
+                                       "ref": u["audio_text"], "sample": r["id"]})
+    fixed = None
+    if eval_file.exists():
+        fixed = {}
+        for l in open(eval_file, encoding="utf-8"):
+            if l.strip() and not l.startswith("#"):
+                g, s = l.split()[:2]
+                fixed[Path(s).stem] = g
+        miss = [s for s in fixed if s not in utts]
+        log(f"bộ đánh giá cố định: dùng lại {eval_file} ({sum(g == 'fix' for g in fixed.values())} fix, "
+            f"{sum(g == 'keep' for g in fixed.values())} keep)" + (f" | KHÔNG thấy {len(miss)} id: {miss[:5]}" if miss else ""))
+        cand = [utts[s] for s in fixed if s in utts]
+    else:  # held-out trước; thiếu câu thì lấy bù từ sample khác (sample đó cũng bị loại khỏi train)
+        rng = random.Random(a.seed)
+        held = sorted((u for u in utts.values() if is_heldout(u["sample"])), key=lambda u: u["stem"])
+        rest = sorted((u for u in utts.values() if not is_heldout(u["sample"])), key=lambda u: u["stem"])
+        rng.shuffle(held)
+        rng.shuffle(rest)
+        cand = held + rest
+    is_wrong = (lambda u: u["stem"] in ids) if ids is not None else (lambda u: u["base_err"] > 0)
+    from asr.asr_zipformer import ZipformerASR
+    asr = ZipformerASR(a.zipformer, int8=True, bias=False, decoding="greedy_search", num_threads=os.cpu_count() or 4)
+    rows, n_fix, n_keep = [], 0, 0
+    for k in range(0, len(cand), 32):  # greedy model gốc: chọn cách đọc số cho nhãn + biết câu nào đang đúng
+        if fixed is None and k >= len(held) and n_fix >= a.eval_fix_n and n_keep >= a.eval_keep_n:
+            break  # đã đủ, không decode thêm sample ngoài held-out
+        chunk = cand[k:k + 32]
+        for u, h in zip(chunk, asr.transcribe([u["audio"] for u in chunk])):
+            lab = label_of(u["ref"], h)
+            if lab:
+                rows.append({**u, "text": lab, "base_hyp": h, "base_err": utt_errors(lab.lower(), norm(h))[0]})
+                n_fix += is_wrong(rows[-1])
+                n_keep += not is_wrong(rows[-1]) and rows[-1]["base_err"] == 0
+    if fixed is None:
+        fix = [u for u in rows if is_wrong(u)][:a.eval_fix_n]
+        keep = [u for u in rows if not is_wrong(u) and u["base_err"] == 0][:a.eval_keep_n]
+        n_out = sum(not is_heldout(u["sample"]) for u in fix + keep)
+        if n_out:
+            log(f"held-out không đủ: lấy bù {n_out} câu từ sample khác (các sample này cũng không được train)")
+        for name, got, want in (("fix", fix, a.eval_fix_n), ("keep", keep, a.eval_keep_n)):
+            if len(got) < want:
+                log(f"CẢNH BÁO: chỉ tìm được {len(got)} câu {name} (< {want})")
+        fixed = {u["stem"]: "fix" for u in fix} | {u["stem"]: "keep" for u in keep}
+        eval_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(eval_file, "w", encoding="utf-8") as f:
+            f.write(f"# bộ đánh giá cố định (seed {a.seed}): fix = câu đang sai, keep = model gốc nhận đúng. "
+                    f"Truyền lại bằng --eval-ids để lần sau đánh giá đúng các câu này\n")
+            for g in ("fix", "keep"):
+                f.writelines(f"{g} {s}\n" for s, gg in sorted(fixed.items()) if gg == g)
+        log(f"bộ đánh giá cố định: {len(fix)} fix + {len(keep)} keep -> {eval_file}")
+    out = []
+    for u in rows:
+        if u["stem"] in fixed:
+            g = fixed[u["stem"]]
+            out.append({**u, "group": g, "hard": g == "fix", "dur": round(duration(u["audio"]), 3)})
+    out.sort(key=lambda u: (u["group"], u["stem"]))
+    n_keep_bad = sum(u["group"] == "keep" and u["base_err"] > 0 for u in out)
+    if n_keep_bad:
+        log(f"  lưu ý: lần decode này {n_keep_bad} câu keep lệch so với lúc chọn (sherpa decode theo lô lệch nhẹ, hoặc "
+            f"đổi model gốc). Không sao: lúc train số câu keep bị hỏng được so với chính model gốc")
+    excl = {u["sample"] for u in out}
+    log(f"dev_new = {len(out)} câu đánh giá | loại {len(excl)} sample chứa chúng khỏi train (cùng người nói); "
+        f"các sample held-out còn lại được train")
+    return out, excl
+
+
+def select_new(a, sp=None, ids=None, exclude=None):
+    """asr_out.jsonl -> dữ liệu mới của train-split.
     Dữ liệu mới = câu SAI (bản --hyp-field sai >= --min-errors từ, hoặc nằm trong --ids-file nếu có)
     + câu ĐÚNG cùng miền làm điểm neo (--correct-ratio x số câu sai) để model không học "câu miền này hay sai -> đổi từ".
-    Cả hai đều khử trùng mẫu câu (--max-per-template)."""
+    Cả hai đều khử trùng mẫu câu (--max-per-template). exclude: sample không được train (chứa câu đánh giá);
+    None = mọi sample held-out (id % 10 == 9)."""
     root = Path(a.root) / a.split
-    ids = None
-    if a.ids_file:
-        ids = {l.strip() for l in open(a.ids_file, encoding="utf-8") if l.strip()}
-        log(f"--ids-file: {len(ids)} id lượt sai nghĩa")
+    if ids is None and a.ids_file:
+        ids = load_ids(a)
     wrong, right, hard_dev = [], [], set()
     n_turn = n_ref = n_wrong = n_skip_lab = n_skip_wer = n_minor = 0
     fields = ["asr", "refine"] if a.hyp_field == "either" else [a.hyp_field]
-    for item in read_jsonl(a.asr_out):
-        held = is_heldout(item["id"])
+    src = a.asr_out or greedy_asr_out(a)
+    found = set()
+    for item in read_jsonl(src):
+        held = item["id"] in exclude if exclude is not None else is_heldout(item["id"])
         for t in item["turns"]:
             n_turn += 1
             ref = t.get("ref")
@@ -268,11 +385,15 @@ def select_new(a, sp=None):
             errs = [utt_errors(lab.lower(), h) for h in hyps]
             e, n = max(errs)
             stem = Path(t["audio"]).stem
+            listed = ids is not None and stem in ids
+            found |= {stem} if listed else set()
             if held:  # held-out không bao giờ vào train; dev_hard = lượt held-out pipeline nhận sai
-                if e >= a.min_errors:
+                if listed or (ids is None and e >= a.min_errors):
                     hard_dev.add(t["audio"])
                 continue
-            if e == 0:
+            if listed:  # có trong --ids-file: luôn là câu sai, kể cả khi greedy tình cờ đúng
+                kind = "wrong"
+            elif e == 0:
                 kind = "right"
             elif (stem in ids) if ids is not None else e >= a.min_errors:
                 kind = "wrong"
@@ -281,7 +402,7 @@ def select_new(a, sp=None):
                 continue
             if kind == "wrong":
                 n_wrong += 1
-                if e / max(n, 1) > a.max_wer:  # sai gần hết câu: thường do nhãn / audio lệch, không học
+                if ids is None and e / max(n, 1) > a.max_wer:  # sai gần hết câu: thường nhãn/audio lệch (id tự chọn: tin người chọn)
                     n_skip_wer += 1
                     continue
             wav = root / t["audio"]
@@ -292,6 +413,10 @@ def select_new(a, sp=None):
             (wrong if kind == "wrong" else right).append(
                 {"id": "new_" + stem, "audio": str(wav.resolve()), "text": lab, "hyp": hyps[0],
                  "wer": round(e / max(n, 1), 3), "sample": item["id"], "turn": t["turn"], "kind": kind})
+
+    if ids is not None:
+        miss = sorted(ids - found)
+        log(f"--ids-file: tìm thấy {len(found)}/{len(ids)} id" + (f", không thấy {len(miss)} (vd {miss[:5]})" if miss else ""))
 
     def uniq(rows):  # cùng audio có thể lặp (history của nhiều sample)
         seen, out = set(), []
@@ -319,33 +444,6 @@ def select_new(a, sp=None):
     log(f"khử mẫu câu (<= {a.max_per_template}/mẫu, {n_tpl} mẫu): sai {n_w0} -> {len(wrong)}, đúng {n_r0} -> "
         f"{sum(r['kind'] == 'right' for r in rows)} (tỉ lệ đúng/sai {a.correct_ratio}) | sau lọc thời lượng: {len(rows)} câu")
     return rows, hard_dev
-
-
-def build_dev_new(a, hard_dev):
-    """mọi lượt user của sample held-out trong train.jsonl. Nhãn chọn cách đọc số theo hyp greedy của model gốc."""
-    root = Path(a.root) / a.split
-    utts = []
-    for r in read_jsonl(root / f"{a.split}.jsonl"):
-        if not is_heldout(r["id"]):
-            continue
-        for u in [h for h in r.get("history", []) if h.get("role") == "user"] + [r]:
-            if u.get("audio") and u.get("audio_text") and (root / u["audio"]).exists():
-                utts.append({"id": "dev_" + Path(u["audio"]).stem, "audio": str((root / u["audio"]).resolve()),
-                             "ref": u["audio_text"], "hard": u["audio"] in hard_dev, "sample": r["id"]})
-    utts = list({u["audio"]: u for u in utts}.values())
-    random.Random(a.seed).shuffle(utts)
-    utts = sorted(utts[:a.dev_n], key=lambda u: u["id"])
-    from asr.asr_zipformer import ZipformerASR
-    asr = ZipformerASR(a.zipformer, int8=True, bias=False, decoding="greedy_search", num_threads=os.cpu_count() or 4)
-    out = []
-    for k in range(0, len(utts), 32):
-        chunk = utts[k:k + 32]
-        for u, h in zip(chunk, asr.transcribe([u["audio"] for u in chunk])):
-            lab = label_of(u["ref"], h)
-            if lab:
-                out.append({**u, "text": lab, "dur": round(duration(u["audio"]), 3)})
-    log(f"dev_new: {len(out)} câu held-out ({sum(u['hard'] for u in out)} câu pipeline nhận sai = dev_hard)")
-    return out
 
 
 def parse_spec(s):
@@ -489,17 +587,19 @@ def stage_prepare(a):
     md = model_dir(a.zipformer)
     sp = spm.SentencePieceProcessor(model_file=str(md / "bpe.model"))
 
-    new, hard_dev = select_new(a, sp)
+    ids = load_ids(a)
+    dev_rows, exclude = build_eval(a, ids)  # trước select_new: biết sample nào phải loại khỏi train
+    write_jsonl(work / "data" / "dev_new.jsonl", dev_rows)
+    new, _ = select_new(a, sp, ids, exclude)
     if not new:
-        sys.exit("không có câu sai nào để fine-tune (kiểm tra --asr-out có trường ref, --root/--split đúng)")
+        sys.exit("không có câu sai nào để fine-tune (kiểm tra --asr-out có trường ref / id trong --ids-file khớp tên "
+                 "file audio, --root/--split đúng)")
     new_h = sum(r["dur"] for r in new) / 3600
     write_jsonl(work / "data" / "new.jsonl", new)
     log(f"new: {sum(r['kind'] == 'wrong' for r in new)} câu sai + {sum(r['kind'] == 'right' for r in new)} câu đúng (neo), "
         f"{new_h:.2f} h -> {work / 'data' / 'new.jsonl'}")
     for r in new[:5]:
         log(f"   ví dụ  HYP: {r['hyp']}\n               LAB: {r['text'].lower()}")
-
-    write_jsonl(work / "data" / "dev_new.jsonl", build_dev_new(a, hard_dev))
 
     old_dev_out = work / "data" / "dev_old.jsonl"
     if not old_dev_out.exists():
@@ -792,7 +892,13 @@ def stage_train(a):
         scaler.load_state_dict(ck["scaler"])
         state = ck["state"]
         log(f"resume từ epoch {state['epoch']}, step {state['step']}")
-    if state["base"] is None:
+    if state["base"] is None and any("group" in r for r in dev_new_rows):
+        # bộ đánh giá cố định từ prepare (eval_ids.txt): keep / fix đã chọn sẵn, không chọn lại
+        state["keep_ids"] = sorted(r["id"] for r in dev_new_rows if r.get("group") == "keep")
+        state["fix_ids"] = sorted(r["id"] for r in dev_new_rows if r.get("group") == "fix")
+        state["base"], _ = evaluate()
+        log("MODEL GỐC   ", fmt(state["base"]))
+    elif state["base"] is None:
         base_r, base_h = evaluate()
         # chọn dev_keep / dev_fix theo đúng cách giải mã dùng ở mỗi epoch (greedy, model gốc), cố định cho cả lần train
         rng = random.Random(a.seed)
@@ -803,7 +909,7 @@ def stage_train(a):
         wrong.sort(key=lambda k: k not in hard_ids)  # ưu tiên câu pipeline cũng nhận sai
         state["keep_ids"], state["fix_ids"] = ok[:a.dev_keep_n], wrong[:a.dev_fix_n]
         if len(state["keep_ids"]) < a.dev_keep_n:
-            log(f"CẢNH BÁO: chỉ có {len(ok)} câu dev_new model gốc nhận đúng (< --dev-keep-n {a.dev_keep_n}); tăng --dev-n")
+            log(f"CẢNH BÁO: chỉ có {len(ok)} câu dev_new model gốc nhận đúng (< --dev-keep-n {a.dev_keep_n})")
         base_r, _ = evaluate()  # tính lại để base có keep/fix (keep_broken = 0 theo định nghĩa)
         state["base"] = base_r
         log("MODEL GỐC   ", fmt(state["base"]))
@@ -812,7 +918,8 @@ def stage_train(a):
     base = state["base"]
 
     def keep_ok(h):
-        return h.get("keep_broken", 0) <= a.keep_max_broken
+        # so với chính model gốc (greedy PyTorch có thể lệch vài câu so với sherpa int8 lúc chọn keep)
+        return h.get("keep_broken", 0) <= base.get("keep_broken", 0) + a.keep_max_broken
 
     def eligible(h):
         return keep_ok(h) and not (h["old"] == h["old"] and base["old"] == base["old"]
@@ -1016,7 +1123,8 @@ def main():
     g = ap.add_argument_group("prepare: dữ liệu mới (câu pipeline nhận sai)")
     g.add_argument("--root", help="thư mục chứa các split của BTC (như pipeline.py --root)")
     g.add_argument("--split", default="train")
-    g.add_argument("--asr-out", default="asr_out.jsonl", help="output của pipeline.py --no-llm --prefetch")
+    g.add_argument("--asr-out", help="output của pipeline.py --no-llm [--prefetch]. Bỏ trống khi có --ids-file: lấy câu từ "
+                                     "train.jsonl, hyp = greedy model gốc (chỉ để chọn cách đọc số + câu đúng làm neo)")
     g.add_argument("--hyp-field", choices=["asr", "refine", "either"], default="asr",
                    help="so ref với: asr = ASR sau prefetch/decode lại (lỗi của chính model âm học, mặc định); "
                         "refine = sau LLM sửa (chỉ câu cả pipeline vẫn sai); either = sai ở một trong hai")
@@ -1028,7 +1136,11 @@ def main():
     g.add_argument("--max-per-template", type=int, default=3,
                    help="tối đa bao nhiêu câu cùng mẫu (Jaccard tập từ >= 0.6) trong dữ liệu mới; 0 = không khử")
     g.add_argument("--max-wer", type=float, default=0.6, help="bỏ câu WER cao hơn (thường do nhãn/audio lệch)")
-    g.add_argument("--dev-n", type=int, default=500, help="số câu held-out tối đa cho dev_new")
+    g.add_argument("--eval-fix-n", type=int, default=100, help="số câu ĐANG SAI (held-out) trong bộ đánh giá cố định")
+    g.add_argument("--eval-keep-n", type=int, default=100,
+                   help="số câu held-out model gốc nhận ĐÚNG trong bộ đánh giá cố định (canh việc làm hỏng câu đúng)")
+    g.add_argument("--eval-ids", help="file bộ đánh giá cố định (dòng 'fix|keep <id>'). Đã có -> dùng lại; chưa có -> chọn "
+                                      "rồi ghi vào đây (mặc định WORK/data/eval_ids.txt)")
     g = ap.add_argument_group("prepare: dữ liệu cũ (replay chống quên)")
     g.add_argument("--new-frac", type=float, default=0.05, help="tỉ lệ dữ liệu mới theo thời lượng (0.05 = 5%%)")
     g.add_argument("--replay", action="append",
@@ -1084,6 +1196,8 @@ def main():
     if a.stage in ("prepare", "all"):
         if not a.root:
             sys.exit("prepare cần --root")
+        if not a.asr_out and not a.ids_file:
+            sys.exit("prepare cần --asr-out (output pipeline) hoặc --ids-file (txt id các câu sai)")
         stage_prepare(a)
     if a.stage in ("train", "all"):
         stage_train(a)
