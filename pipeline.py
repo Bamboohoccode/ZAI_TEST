@@ -547,6 +547,8 @@ def run_audio_only(a, items, asr, t_start, llm=None, cands=None, catalog=None):
     from textnorm.textutil import norm, wer_counts
     from textnorm.vi_num import to_spoken
     root = Path(a.root)
+    if a.prefetch:
+        from zaic_tools import ToolEnv  # main() đã thêm thư mục chứa zaic_tools vào sys.path
     # từ thường của tập (để không coi chữ hoa đầu câu là tên riêng khi lấy entity từ text)
     common = frozenset(common_words(root / a.split / f"{a.split}.jsonl")) if a.bias else frozenset()
     tot = {"asr": [0, 0], "refine": [0, 0]}
