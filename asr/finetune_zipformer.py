@@ -1189,7 +1189,13 @@ def get_parameter_groups(model, lr):
 
 FREEZE = {"none": (), "embed": ("encoder_embed.",),
           "low": ("encoder_embed.", "encoder.encoders.0.", "encoder.encoders.1."),
-          "mid": ("encoder_embed.", "encoder.encoders.0.", "encoder.encoders.1.", "encoder.encoders.2.")}
+          "mid": ("encoder_embed.", "encoder.encoders.0.", "encoder.encoders.1.", "encoder.encoders.2."),
+          # chỉ 2 stack trên cùng của encoder + decoder/joiner được học
+          "top": ("encoder_embed.", "encoder.encoders.0.", "encoder.encoders.1.", "encoder.encoders.2.",
+                  "encoder.encoders.3."),
+          # đóng băng TOÀN BỘ encoder: chỉ học decoder (mạng dự đoán ~ LM nội) + joiner. An toàn nhất: phần nghe
+          # giữ nguyên nên khó quên; hợp với lỗi kiểu chọn từ (xếp/sếp, ngàn/nghìn, sgc/sjc)
+          "encoder": ("encoder_embed.", "encoder.", "ctc_output.")}
 
 
 def freeze_params(model, level):
@@ -1292,7 +1298,8 @@ def main():
                         "số (grad inf) trên T4 -> không học")
     g.add_argument("--no-fp16", dest="amp", action="store_const", const="none", help="= --amp none")
     g.add_argument("--freeze", choices=list(FREEZE), default="low",
-                   help="đóng băng lớp gần đầu vào: none / embed (encoder_embed) / low (+ stack 0,1, mặc định) / mid (+ stack 2)")
+                   help="đóng băng: none / embed / low (+ stack 0,1, mặc định) / mid (+ stack 2) / top (chỉ học 2 stack cuối) / "
+                        "encoder (chỉ học decoder + joiner, an toàn nhất)")
     g.add_argument("--diverge-ratio", type=float, default=1.5,
                    help="loss TB một cửa sổ --log-every batch > ngần này x cửa sổ đầu -> coi là phân kỳ: khôi phục + giảm nửa lr")
     g.add_argument("--max-recover", type=int, default=3, help="số lần khôi phục khi phân kỳ trước khi dừng hẳn")
