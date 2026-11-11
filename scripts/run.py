@@ -75,7 +75,9 @@ def parse_args(argv=None):
     g.add_argument("--gpu-mem", type=float, default=0.7, help="gpu_memory_utilization của LLM chính")
     g.add_argument("--max-len", type=int, default=config.MAX_CTX, help="max_model_len; GPU thiếu bộ nhớ KV -> giảm (8192)")
     g.add_argument("--eager", action="store_true", help="vLLM enforce_eager (bỏ CUDA graph)")
-    g.add_argument("--mapper", default=config.MAPPER_MODEL, help='"none" = tắt, "same" = dùng chung model với --llm')
+    g.add_argument("--mapper", default="none",
+                   help=f'mặc định tắt (held-out: mapper cắt mất nội dung, WER 0.14 -> 0.26); HF id để bật, vd. {config.MAPPER_MODEL}; '
+                        '"same" = dùng chung model với --llm')
     g.add_argument("--mapper-lora")
     g.add_argument("--mapper-device", help="GPU riêng cho mapper")
     g.add_argument("--mapper-gpu-mem", type=float, default=0.1)

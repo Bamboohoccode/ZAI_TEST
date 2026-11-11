@@ -6,6 +6,7 @@ import argparse
 ap = argparse.ArgumentParser()
 ap.add_argument("out")
 ap.add_argument("--smoke", action="store_true")
+ap.add_argument("--grid", default="", help='nollm: file JSON {tên: cờ run.py} thay bộ biến thể mặc định')
 ap.add_argument("--stage", default="all", choices=["all", "asr", "nollm"])
 A = ap.parse_args()
 out, smoke = A.out, A.smoke
@@ -29,7 +30,7 @@ Settings: **GPU T4 x2**, **Internet on**, Input: dataset BTC (`train/`, `public_
 Chạy được bằng *Save & Run All* (không cần chỉnh tay): mọi số đo trên **held-out** (id % 10 == 9).
 
 1. Dump ASR train, train RNNLM, so WER mọi cấu hình decode (greedy / beam / hotword / VAD / RNNLM nhiều scale / beam 8).
-2. `run.py --no-llm` với cấu hình thắng: hotword cố định / + bias / + prefetch, có và không có mapper -> WER.
+2. `run.py --no-llm` với cấu hình thắng: hotword cố định / + bias / + prefetch (không mapper) -> WER.
 Tổng kết ở `results.json`, log từng bước ở `logs/`.
 
 `SMOKE = True`: chạy thử vài mẫu mỗi bước để bắt lỗi môi trường (vài chục phút).
@@ -40,6 +41,7 @@ SMOKE = {smoke}
 # all = bước 1 rồi bước 2 | asr = chỉ bước 1 | nollm = chỉ bước 2 với ASR_DEFAULT (không cần RNNLM)
 STAGE = {A.stage!r}
 ASR_DEFAULT = "--beam 4 --hotwords-file assets/hotwords_global.txt --hotword-score 1.5"
+NOLLM_GRID = {json.load(open(A.grid)) if A.grid else {}!r}
 BRANCH = 'refactor/rebuild'   # đổi thành 'main' sau khi merge
 BUDGET_H = 11.0               # Kaggle chặn 12 h: quá ngân sách thì bỏ các biến thể còn lại
 !git clone -q -b $BRANCH https://github.com/Bamboohoccode/ZAI_TEST.git /tmp/ZAI_TEST || (cd /tmp/ZAI_TEST && git pull -q)
@@ -153,7 +155,7 @@ LIM = ' --limit 6' if SMOKE else ''
 md("""
 ## 4. Xử lý lời nói không có agent gọi tool (`--no-llm`, STAGE all / nollm)
 Hotword cố định / + bias theo mẫu (hồ sơ, history) / + prefetch (LLM gọi tool đọc lấy tên làm hotword, decode lại câu cuối),
-mỗi mức có và không có mapper phương ngữ. In WER của bản ASR và bản sau mapper.
+mapper tắt (làm hỏng transcript).
 """)
 code("""
 def wers(o):
@@ -163,23 +165,20 @@ def wers(o):
     return {'wer_asr': float(a.group(1)) if a else None, 'wer_mapped': float(m.group(1)) if m else None,
             'sec_per_sample': float(t.group(1)) if t else None}
 
-NOLLM = {
-    'static':                '--mapper none',
-    'static+mapper':         '',
-    'bias':                  '--bias --mapper none',
-    'bias+mapper':           '--bias',
-    'bias+prefetch':         f'--prefetch {LLM} --mapper none',
-    'bias+prefetch+mapper':  f'--prefetch {LLM}',
+NOLLM = NOLLM_GRID or {   # mapper tắt (mặc định của run.py): làm hỏng transcript
+    'static':         f'{ASR}',
+    'bias':           f'{ASR} --bias',
+    'bias+prefetch':  f'{ASR} --prefetch {LLM}',
 }
 if STAGE in ('all', 'nollm'):
     for name, extra in NOLLM.items():
         if hours() > BUDGET_H:
             RES['nollm'][name] = 'skipped (time)'; continue
-        _, o = sh(f'python scripts/run.py --root $DATA --split train --heldout --no-llm {ASR} {extra}{LIM} '
-                  f'--mapper-device 0 --mapper-gpu-mem 0.4 --out {W}/nollm_{name.replace("+", "_")}.jsonl', f'nollm_{name}')
-        RES['nollm'][name] = {'flags': f'{ASR} {extra}'.strip(), **wers(o)}; save()
+        _, o = sh(f'python scripts/run.py --root $DATA --split train --heldout --no-llm {extra}{LIM} '
+                  f'--out {W}/nollm_{name.replace("+", "_")}.jsonl', f'nollm_{name}')
+        RES['nollm'][name] = {'flags': extra, **wers(o)}; save()
 for k, v in RES['nollm'].items():
-    print(f'{k:<22}', v if isinstance(v, str) else f"WER ASR {v['wer_asr']}  WER mapper {v['wer_mapped']}  {v['sec_per_sample']}s/mẫu")
+    print(f'{k:<22}', v if isinstance(v, str) else f"WER {v['wer_asr']}  {v['sec_per_sample']}s/mẫu")
 save()
 """)
 
