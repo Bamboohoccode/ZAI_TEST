@@ -113,7 +113,9 @@ def main(argv=None):
     all_items = load_items(a.root, a.split)
     items = select(all_items, a.heldout, a.ids, a.limit)
     # từ thường của split (không coi chữ hoa đầu câu là tên riêng khi lấy entity từ text)
-    common = frozenset(common_words(a.root / a.split / f"{a.split}.jsonl")) if a.bias else frozenset()
+    # từ thường lấy từ transcript train (public / private test không có audio_text)
+    common_src = a.root / "train" / "train.jsonl"
+    common = frozenset(common_words(common_src)) if a.bias and common_src.exists() else frozenset()
 
     asr = None
     if not a.text:

@@ -7,7 +7,7 @@ import time
 from lifemate.agent.messages import assistant_msg, clip, parse_calls, parse_verdict, unseen_ids
 from lifemate.agent.prompts import PREFETCH, REPLAN, VERIFY
 from lifemate.bias import _walk as walk_entities, add_to_pool, snap_value, text_entities
-from lifemate.config import MAX_STEPS, VERIFY_ROUNDS
+from lifemate.config import MAX_NEW, MAX_STEPS, VERIFY_ROUNDS
 
 
 def plan_step(llm, msgs, tools, trace, rounds, deadline):
@@ -47,12 +47,17 @@ def snap_search_keys(call, pools, trace):
             trace.append({"snap": {"tool": call["name"], "arg": k, "from": old, "to": new}})
 
 
-def run_agent(env, llm, msgs, tools, catalog, trace, rounds=VERIFY_ROUNDS, deadline=float("inf"), pools=None, pre_done=()):
-    """pre_done: [(tool, args, result)] đã chạy trên env trước đó (--prefetch), đã có trong msgs: không gọi lại tool đọc đó."""
+def run_agent(env, llm, msgs, tools, catalog, trace, rounds=VERIFY_ROUNDS, deadline=float("inf"), pools=None, pre_done=(),
+              max_len=None):
+    """pre_done: [(tool, args, result)] đã chạy trên env trước đó (--prefetch), đã có trong msgs: không gọi lại tool đọc đó.
+    max_len: max_model_len của LLM; kết quả tool làm hội thoại sắp tràn -> dừng, giữ các call đã chạy (thay vì lỗi vLLM)."""
     done = {json.dumps({"name": n, "arguments": a}, sort_keys=True, ensure_ascii=False) for n, a, _ in pre_done}
     for _ in range(MAX_STEPS):
         if time.time() > deadline:  # keep the calls that already ran
             trace.append({"error": "time limit"})
+            return
+        if max_len and llm.n_tokens(msgs, tools) > max_len - MAX_NEW * 2:  # chừa chỗ cho plan + prompt verify
+            trace.append({"error": "context full"})
             return
         out, calls = plan_step(llm, msgs, tools, trace, rounds, deadline)
         if not calls:

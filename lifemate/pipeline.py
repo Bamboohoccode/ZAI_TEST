@@ -87,7 +87,8 @@ def run_sample(a, item, ToolEnv, catalog, asr, llm, mapper, common, gold=False, 
             msgs += [{"role": "tool", "content": clip(r)} for _, _, r in pre_done]
         if gold:
             llm.queue = list(item["label"]["tool_calls"])
-        run_agent(env, llm, msgs, tools, catalog, res.trace, rounds, deadline=deadline, pools=pools, pre_done=pre_done)
+        run_agent(env, llm, msgs, tools, catalog, res.trace, rounds, deadline=deadline, pools=pools, pre_done=pre_done,
+                  max_len=a.max_len)
     except Exception as e:  # giữ những gì đã chạy; mẫu lỗi vẫn phải có dòng trong submission
         res.trace.append({"error": f"{type(e).__name__}: {str(e)[:300]}", "traceback": traceback.format_exc()})
     res.calls, res.state_hash = env.get_tool_calls(), env.get_state_hash()
