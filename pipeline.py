@@ -765,9 +765,15 @@ def main():
         if a.alt_zipformer:
             a.alt_asr = ZipformerASR(a.zipformer if a.alt_zipformer == "same" else a.alt_zipformer,
                                      num_threads=a.zipformer_threads, bias=False, vad=a.vad, decoding="greedy_search")
-        if not Path(a.cand_train).exists():
-            sys.exit(f"thiếu {a.cand_train}: giải nén asr_assets.zip (bước E) hoặc chạy asr/eval_asr.py --dump (bước A)")
-        cands = Candidates.from_train(a.cand_train)
+        if Path(a.cand_train).exists():
+            cands = Candidates.from_train(a.cand_train)
+        else:  # dự phòng: từ vựng từ nhãn train.jsonl, không có bảng nhầm lẫn ASR -> ứng viên chỉ từ gần âm
+            refs = root / "train" / "train.jsonl"
+            if not refs.exists():
+                sys.exit(f"thiếu {a.cand_train} và {refs}: giải nén asr_assets.zip (bước E) hoặc chạy asr/eval_asr.py --dump")
+            print(f"CẢNH BÁO: thiếu {a.cand_train} -> ứng viên chỉ lấy từ gần âm trong từ vựng {refs} (không có bảng nhầm "
+                  f"lẫn ASR). Đầy đủ: asr/eval_asr.py --root DATA --subset all --configs beam --dump {a.cand_train}")
+            cands = Candidates.from_refs(refs)
     if a.no_llm:
         if a.text:
             sys.exit("--no-llm / --mark-only cần ASR, không dùng với --text")

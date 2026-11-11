@@ -54,6 +54,21 @@ class Candidates:
                         confusion[h][t] += 1
         return cls(confusion, vocab)
 
+    @classmethod
+    def from_refs(cls, path, include_heldout=False):
+        """dự phòng khi chưa có asr_train_plain.jsonl: từ vựng lấy từ audio_text của <split>.jsonl BTC (mọi lượt user),
+        không có bảng nhầm lẫn (ứng viên chỉ từ gần âm). Số giữ nguyên dạng nhãn (to_spoken không chạy ở đây)."""
+        vocab = Counter()
+        for line in open(path, encoding="utf-8"):
+            if not line.strip():
+                continue
+            it = json.loads(line)
+            if not include_heldout and _heldout(it.get("id")):
+                continue
+            for u in [h for h in it.get("history", []) if h.get("role") == "user"] + [it]:
+                vocab.update(w for w in re.findall(r"[^\W\d_]+", (u.get("audio_text") or "").lower()))
+        return cls(defaultdict(Counter), vocab)
+
     def candidates(self, word, k=3, min_ratio=0.75, min_count=2, max_dist=0.8, method="syl"):
         """bảng nhầm lẫn (gặp >= min_count lần) trước, rồi từ gần âm: giống âm hơn trước, cùng mức thì từ hay gặp trước.
         method="syl": vi_phon.dist <= max_dist; "key" (hoặc từ không parse được): khoá phon, ratio >= min_ratio."""
