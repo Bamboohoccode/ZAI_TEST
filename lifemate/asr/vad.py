@@ -1,13 +1,13 @@
 """VAD (silero, chạy bằng sherpa-onnx, offline): cắt khoảng lặng / nhiễu đầu-cuối và rút ngắn khoảng lặng dài giữa câu
 trước khi đưa vào ASR. Model lấy từ pip package `silero_vad` (silero_vad/data/silero_vad.onnx), không tải gì từ mạng.
 
-    from asr.vad import VAD
+    from lifemate.asr.vad import VAD
     vad = VAD()
     vad.segments(x, 16000)    # [(start_s, end_s), ...]
     y = vad.trim(x, 16000)    # audio đã cắt; không thấy tiếng nói / còn quá ngắn -> trả nguyên x
 
-    python asr/vad.py a.wav [--out a_trim.wav]                 # in các đoạn tiếng nói
-    python asr/vad.py --dir DATA/train/audio --stats [--n 500]  # thống kê % bị cắt, số file rơi vào fallback
+    python -m lifemate.asr.vad a.wav [--out a_trim.wav]                 # in các đoạn tiếng nói
+    python -m lifemate.asr.vad --dir DATA/train/audio --stats [--n 500]  # thống kê % bị cắt, số file rơi vào fallback
 """
 import argparse
 import glob

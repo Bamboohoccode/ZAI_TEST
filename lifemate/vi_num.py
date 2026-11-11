@@ -1,6 +1,6 @@
 """TN offline bằng luật (viết -> dạng đọc, giống output Zipformer): số, mã chữ+số, %, giờ. Không gọi mạng/LLM.
 
-    from textnorm.vi_num import to_spoken, num_variants, code_variants
+    from lifemate.vi_num import to_spoken, num_variants, code_variants
     to_spoken("Mở VTV3 lúc 7:30 nhé, giảm 50%")          # -> "mở vtv ba lúc bảy giờ ba mươi nhé giảm năm mươi phần trăm"
     to_spoken("Đổ RON95 giúp anh", hyp="đổ ron chín mươi lăm giúp anh")   # chọn cách đọc giống người nói
     num_variants("25")     # ["hai mươi lăm", "hai lăm"]
@@ -11,13 +11,7 @@ Mọi cách đọc hợp lệ được sinh ra; nếu có `hyp` (output ASR củ
 import re
 from collections import Counter
 
-import sys
-from pathlib import Path
-
-if __package__ in (None, ""):  # chạy trực tiếp: python textnorm/vi_num.py
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from textnorm.textutil import norm  # noqa: E402
+from lifemate.text import norm
 
 D = ["không", "một", "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám", "chín"]
 UNITS = [(10 ** 9, "tỷ"), (10 ** 6, "triệu"), (10 ** 3, "nghìn")]

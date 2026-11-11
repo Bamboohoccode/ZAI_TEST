@@ -1,12 +1,12 @@
 """Khai thác danh sách hotword CỐ ĐỊNH (toàn cục) từ lỗi ASR trên train. Offline, KHÔNG đọc state.json.
 
-    python hotwords/mine_hotwords.py --in data/asr_train_plain.jsonl --train-jsonl DATA/train/train.jsonl
-        -> hotwords/hotwords_global.txt  (dòng "CỤM TỪ :score", chữ HOA cho vocab BPE; nạp 1 lần lúc khởi tạo ASR)
-        -> hotwords/hotwords_global.json (thống kê từng cụm: n_occ, n_err, err_rate, ASR nghe ra gì, alias)
+    python scripts/mine_hotwords.py --in data/asr_train_plain.jsonl --train-jsonl DATA/train/train.jsonl
+        -> assets/hotwords_global.txt  (dòng "CỤM TỪ :score", chữ HOA cho vocab BPE; nạp 1 lần lúc khởi tạo ASR)
+        -> assets/hotwords_global.json (thống kê từng cụm: n_occ, n_err, err_rate, ASR nghe ra gì, alias)
 
 Cách làm:
   1. ref -> dạng đọc (vi_num.to_spoken, chọn cách đọc số theo hyp). Chỉ dùng phần train-split (id % 10 != 9),
-     phần held-out (id % 10 == 9) để asr/eval_asr.py đo công bằng.
+     phần held-out (id % 10 == 9) để scripts/eval_asr.py đo công bằng.
   2. Ứng viên lấy từ ref viết: mã chữ+số (RON95, VTV3...), viết tắt (SJC, SMS), từ ngoại (check-in, meeting, tivi),
      cụm tên riêng nhiều âm tiết (Sếp Dũng, Đà Nẵng); từ đơn âm tiết tiếng Việt bị loại (dễ kéo sai từ thường).
      Mã có số được sinh thêm theo mẫu (VTV1-9, HTV1-9, SCTV1-20, RON92/95, E5) và đọc theo kiểu Zipformer
@@ -26,17 +26,11 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 import sys  # noqa: E402
 
-if __package__ in (None, ""):  # chạy trực tiếp: python hotwords/mine_hotwords.py
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # chạy từ gốc repo: python scripts/<tên>.py
 
-from hotwords.bias import _VI_SYL, common_words  # noqa: E402
-from textnorm.vi_num import code_variants, to_spoken  # noqa: E402
-
-
-def is_heldout(sid):
-    """train_0019 -> held-out nếu số % 10 == 9 (chia theo sample, mọi lượt của một sample cùng phía)."""
-    m = re.search(r"(\d+)$", sid)
-    return bool(m) and int(m.group(1)) % 10 == 9
+from lifemate.bias import _VI_SYL, common_words  # noqa: E402
+from lifemate.text import is_heldout  # noqa: E402
+from lifemate.vi_num import code_variants, to_spoken  # noqa: E402
 
 
 def load_pairs(path, heldout=False):
@@ -109,9 +103,9 @@ def aligned(ref_w, hyp_w):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--in", dest="inp", default="data/asr_train_plain.jsonl",
-                    help="jsonl có hyp/ref: output ASR KHÔNG hotword trên train (asr/eval_asr.py --configs beam --dump)")
+                    help="jsonl có hyp/ref: output ASR KHÔNG hotword trên train (scripts/eval_asr.py --configs beam --dump)")
     ap.add_argument("--train-jsonl", help="DATA/train/train.jsonl (để lấy common_words); bỏ trống = không lọc")
-    ap.add_argument("--out", default="hotwords/hotwords_global")
+    ap.add_argument("--out", default="assets/hotwords_global")
     ap.add_argument("--min-err", type=int, default=2)
     ap.add_argument("--min-rate", type=float, default=0.3)
     ap.add_argument("--base", type=float, default=1.0)

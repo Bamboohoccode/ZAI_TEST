@@ -2,8 +2,8 @@
 local hoặc HF cache, không tải).
 
     asr = ZipformerASR("hynt/ZipFormer-150M-CR-CTC-RNNT-6000h")                      # HF id (đã có trong cache) hoặc thư mục
-    asr = ZipformerASR(..., hotwords_file="hotwords/hotwords_global.txt")             # hotword cố định, nạp 1 lần lúc khởi tạo
-    asr = ZipformerASR(..., lm="lm/rnnlm/rnnlm.onnx", lm_scale=0.3)            # LM fusion (RNNLM, train_rnnlm.py)
+    asr = ZipformerASR(..., hotwords_file="assets/hotwords_global.txt")             # hotword cố định, nạp 1 lần lúc khởi tạo
+    asr = ZipformerASR(..., lm="models/rnnlm/rnnlm.onnx", lm_scale=0.3)            # LM fusion (RNNLM, train_rnnlm.py)
     asr = ZipformerASR(..., vad=True)                                         # cắt khoảng lặng bằng silero VAD (vad.py)
     asr.transcribe(["a.wav"])                                                 # -> ["..."] chữ thường, không dấu câu
     asr.transcribe(["a.wav"], hotwords=["Zalo"])                              # (kiểu cũ) hotword theo từng lần gọi
@@ -97,7 +97,7 @@ class ZipformerASR:
             encoder=pick("encoder"), decoder=pick("decoder"), joiner=pick("joiner"), tokens=str(tokens), num_threads=num_threads,
             sample_rate=16000, feature_dim=80, max_active_paths=beam, decoding_method=method, **kw)
         if vad is True:
-            from asr.vad import VAD
+            from lifemate.asr.vad import VAD
             vad = VAD()
         self.vad = vad or None
 
@@ -114,7 +114,7 @@ class ZipformerASR:
         import soundfile as sf
         hw = None
         if hotwords and self.bias:
-            from hotwords.bias import hotword_lines, hotwords as fmt
+            from lifemate.bias import hotword_lines, hotwords as fmt
             hw = fmt(hotwords, score) if score is not None else hotword_lines(
                 hotwords, self.hi if hi is None else hi, self.lo if lo is None else lo,
                 self.glossary_score if glossary_score is None else glossary_score)

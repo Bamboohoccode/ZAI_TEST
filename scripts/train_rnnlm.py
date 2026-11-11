@@ -1,10 +1,10 @@
 """Train RNNLM (LSTM trên token BPE của Zipformer) cho LM fusion trong sherpa-onnx, rồi export ONNX. Offline.
 
-    python lm/train_rnnlm.py --data data/asr_train_plain.jsonl --out lm/rnnlm   # -> lm/rnnlm/rnnlm.onnx, model.pt
-    python asr/eval_asr.py --root DATA --configs hw,hw+lm --lm lm/rnnlm/rnnlm.onnx --lm-scales 0.1,0.2,0.3
+    python scripts/train_rnnlm.py --data data/asr_train_plain.jsonl --out models/rnnlm   # -> models/rnnlm/rnnlm.onnx, model.pt
+    python scripts/eval_asr.py --root DATA --configs hw,hw+lm --lm models/rnnlm/rnnlm.onnx --lm-scales 0.1,0.2,0.3
 
 Corpus: câu user của train-split (id % 10 != 9) ở dạng đọc (chữ thường không dấu câu, số đọc thành chữ: trường
-`ref_spoken` của asr/eval_asr.py --dump, hoặc vi_num.to_spoken(audio_text)), viết HOA rồi mã hoá bằng bpe.model của Zipformer.
+`ref_spoken` của scripts/eval_asr.py --dump, hoặc vi_num.to_spoken(audio_text)), viết HOA rồi mã hoá bằng bpe.model của Zipformer.
 Câu có số được thêm các cách đọc khác (hai mươi lăm / hai lăm). Held-out (id % 10 == 9) để early-stop theo perplexity.
 
 ONNX (khớp sherpa-onnx OfflineRnnLM::Rescore(x, x_lens)):
@@ -27,11 +27,10 @@ import torch.nn as nn  # noqa: E402
 
 import sys  # noqa: E402
 
-if __package__ in (None, ""):  # chạy trực tiếp: python lm/train_rnnlm.py
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # chạy từ gốc repo: python scripts/train_rnnlm.py
 
-from hotwords.mine_hotwords import is_heldout  # noqa: E402
-from textnorm.vi_num import num_variants, to_spoken  # noqa: E402
+from lifemate.text import is_heldout  # noqa: E402
+from lifemate.vi_num import num_variants, to_spoken  # noqa: E402
 
 SOS = EOS = 1   # tokens.txt của Zipformer: <blk>=0, <sos/eos>=1, <unk>=2
 
@@ -104,7 +103,7 @@ def load_corpus(data, train_jsonl):
             if s:
                 (ho if is_heldout(r["id"]) else tr).append(s)
             if not is_heldout(r["id"]):
-                from textnorm.textutil import norm
+                from lifemate.text import norm
                 for alt in spoken_alts(norm(r["ref"])):
                     s2 = to_spoken(alt)
                     if s2 and s2 != s:
@@ -152,7 +151,7 @@ def main():
     ap.add_argument("--data", default="data/asr_train_plain.jsonl", help="jsonl có id/ref[/ref_spoken/hyp] (eval_asr.py --dump)")
     ap.add_argument("--train-jsonl", help="dùng audio_text của DATA/train/train.jsonl nếu không có --data")
     ap.add_argument("--zipformer", default="hynt/ZipFormer-150M-CR-CTC-RNNT-6000h")
-    ap.add_argument("--out", default="lm/rnnlm")
+    ap.add_argument("--out", default="models/rnnlm")
     ap.add_argument("--emb", type=int, default=256)
     ap.add_argument("--hidden", type=int, default=256)
     ap.add_argument("--layers", type=int, default=2)
@@ -170,7 +169,7 @@ def main():
     random.seed(a.seed)
     torch.manual_seed(a.seed)
     import sentencepiece as spm
-    from asr.asr_zipformer import model_dir
+    from lifemate.asr.zipformer import model_dir
     sp = spm.SentencePieceProcessor(model_file=str(model_dir(a.zipformer) / "bpe.model"))
     vocab = sp.get_piece_size()
 

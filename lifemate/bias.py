@@ -4,11 +4,11 @@ Từ khoá (entity) CHỈ lấy từ item của file <split>.jsonl: hồ sơ use
 call trong history (danh bạ, lịch, nhạc... mà các lượt trước đã đọc) + một glossary nhỏ (Zalo, SMS, SJC, email...).
 KHÔNG đọc <split>_environment/<id>/state.json (chỉ ToolEnv được nạp file đó). Dùng ở 2 chỗ:
 
-  1. hotword_lines(): hotword cho Zipformer/sherpa-onnx (biasing lúc decode, modified_beam_search), pipeline.py --bias.
+  1. hotword_lines(): hotword cho Zipformer/sherpa-onnx (biasing lúc decode, modified_beam_search), scripts/run.py --bias.
   2. snap_value(): "search key" của tool call (contacts.search query, tv.tune channel...) -> entity gần nhất (snap_search_keys).
 
 So khớp theo phát âm: bỏ dấu thanh, gộp các cặp hay nhầm (d/gi/r/z, ch/tr, s/x, c/k/q, l/n đầu âm...), so chuỗi ghép
-không khoảng trắng để bắt lỗi tách/ghép âm tiết. phon() cũng dùng cho ứng viên gần âm của asr/candidates.py.
+không khoảng trắng để bắt lỗi tách/ghép âm tiết.
 """
 import json
 import re

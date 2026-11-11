@@ -2,12 +2,12 @@
 Offline, không đọc state.json. Ref = audio_text đổi sang dạng đọc (vi_num.to_spoken, chấp nhận mọi cách đọc số hợp lệ).
 
     # A) decode train không hotword -> data/asr_train_plain.jsonl (hyp + ref_spoken): đầu vào của
-    #    hotwords/mine_hotwords.py, lm/train_rnnlm.py và ứng viên của pipeline.py (--cand-train)
-    python asr/eval_asr.py --root DATA --subset all --configs beam --dump data/asr_train_plain.jsonl
+    #    scripts/mine_hotwords.py và scripts/train_rnnlm.py
+    python scripts/eval_asr.py --root DATA --subset all --configs beam --dump data/asr_train_plain.jsonl
 
     # D) so sánh trên held-out (id % 10 == 9, không dùng để khai thác hotword / train LM)
-    python asr/eval_asr.py --root DATA --configs greedy,beam,hw,vad+hw,hw+lm,vad+hw+lm \\
-        --hotwords hotwords/hotwords_global.txt --lm lm/rnnlm/rnnlm.onnx --lm-scales 0.1,0.2,0.3,0.5
+    python scripts/eval_asr.py --root DATA --configs greedy,beam,hw,vad+hw,hw+lm,vad+hw+lm \\
+        --hotwords assets/hotwords_global.txt --lm models/rnnlm/rnnlm.onnx --lm-scales 0.1,0.2,0.3,0.5
 
 Cấu hình = các phần nối bằng '+': greedy | beam | hw (hotwords_file) | vad | lm. "hw"/"lm" ngầm dùng beam search.
 """
@@ -21,12 +21,10 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 import sys  # noqa: E402
 
-if __package__ in (None, ""):  # chạy trực tiếp: python asr/eval_asr.py
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # chạy từ gốc repo: python scripts/<tên>.py
 
-from hotwords.mine_hotwords import is_heldout  # noqa: E402
-from textnorm.textutil import norm, wer_counts  # noqa: E402
-from textnorm.vi_num import to_spoken  # noqa: E402
+from lifemate.text import is_heldout, norm, wer_counts  # noqa: E402
+from lifemate.vi_num import to_spoken  # noqa: E402
 
 
 def utterances(root, subset):
@@ -55,9 +53,9 @@ def main():
     ap.add_argument("--int8", action="store_true")
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--beam", type=int, default=4)
-    ap.add_argument("--hotwords", default="hotwords/hotwords_global.txt")
+    ap.add_argument("--hotwords", default="assets/hotwords_global.txt")
     ap.add_argument("--hotwords-score", type=float, default=1.5, help="score mặc định cho dòng không ghi :score")
-    ap.add_argument("--lm", default="lm/rnnlm/rnnlm.onnx")
+    ap.add_argument("--lm", default="models/rnnlm/rnnlm.onnx")
     ap.add_argument("--lm-scales", default="0.3")
     ap.add_argument("--vad-pad", type=float, default=0.15)
     ap.add_argument("--vad-gap", type=float, default=0.5, help="khoảng lặng giữa dài hơn -> rút còn 0.1s (lớn = không rút)")
@@ -65,10 +63,11 @@ def main():
     ap.add_argument("--bs", type=int, default=32, help="số file mỗi lần decode_streams")
     ap.add_argument("--dump", help="ghi jsonl (id, turn, audio, hyp, ref) của cấu hình ĐẦU TIÊN (cho mine_hotwords / LM)")
     ap.add_argument("--dump-all", help="thư mục: ghi jsonl cho từng cấu hình")
+    ap.add_argument("--json", help="ghi bảng kết quả [{config, wer, wer_query, seconds, beam}] (thêm vào file nếu đã có)")
     a = ap.parse_args()
 
-    from asr.asr_zipformer import ZipformerASR
-    from asr.vad import VAD
+    from lifemate.asr.vad import VAD
+    from lifemate.asr.zipformer import ZipformerASR
     root = Path(a.root).expanduser()
     utts = utterances(root, a.subset)
     if a.n:
@@ -125,6 +124,11 @@ def main():
     print(f"{'config':<32}{'WER':>8}{'WER(query)':>12}{'time':>8}")
     for name, w, wq, t in rows:
         print(f"{name:<32}{w:>8.4f}{wq:>12.4f}{t:>7.0f}s")
+    if a.json:
+        old = json.load(open(a.json, encoding="utf-8")) if Path(a.json).exists() else []
+        old += [{"config": n, "wer": w, "wer_query": wq, "seconds": t, "beam": a.beam, "n": len(utts), "subset": a.subset}
+                for n, w, wq, t in rows]
+        json.dump(old, open(a.json, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
 
 if __name__ == "__main__":

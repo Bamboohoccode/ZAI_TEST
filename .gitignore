@@ -3,7 +3,9 @@ data/*
 !data/asr_sai_nghia_ids.txt
 !data/asr_sai_nghia_chitiet.txt
 
-# Trọng số và output suy luận
+# Trọng số (models/: RNNLM train trên Kaggle) và output suy luận
+models/
+asr_out*.jsonl
 *.safetensors
 *.bin
 *.onnx
