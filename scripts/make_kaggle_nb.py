@@ -112,7 +112,10 @@ if lm:
     os.makedirs('models/rnnlm', exist_ok=True)
     shutil.copytree(os.path.dirname(lm), 'models/rnnlm', dirs_exist_ok=True)
 HAS_LM = os.path.exists('models/rnnlm/rnnlm.onnx')
-print('RNNLM:', HAS_LM, lm, '| tổng', f'{hours():.2f}h')
+LMF = '--lm models/rnnlm/rnnlm.onnx --lm-scale '
+# ASR tốt nhất của stage asr (held-out): beam 8 + hotword cố định + RNNLM 0.5 + bias (WER 0.1227)
+BEST = f'--beam 8 {HW} --bias {LMF}0.5' if HAS_LM else f'--beam 8 {HW} --bias'
+print('RNNLM:', HAS_LM, lm, '| ASR:', BEST, '| tổng', f'{hours():.2f}h')
 """)
 
 md("## Dump ASR train (stage asr / p12): đầu vào RNNLM, bảng nhầm lẫn P1, few-shot P5")
@@ -176,10 +179,16 @@ if STAGE == 'nollm':
 
 if STAGE == 'p12':
     # các bản decode khác nhau của cùng audio = N-best tự ghép (sherpa-onnx không trả N-best); 'main' là ASR chính
-    NB = {'main': f'--beam 4 {HW} --bias', 'b8': f'--beam 8 {HW} --bias', 'nohw': '--beam 4 --bias',
+    # dò tiếp lm-scale (0.5 là mép lưới của stage asr) ở beam 8
+    if HAS_LM:
+        sh(f'python scripts/eval_asr.py --root $DATA --threads 4 --json {W}/asr_lm_ext.json --beam 8 --configs hw+lm '
+           f'--lm models/rnnlm/rnnlm.onnx --lm-scales 0.6,0.7,0.8,1.0' + (' --n 60' if SMOKE else ''), 'asr_lm_ext')
+        if os.path.exists(f'{W}/asr_lm_ext.json'):
+            RES['asr_lm_ext'] = json.load(open(f'{W}/asr_lm_ext.json')); save()
+    NB = {'main': BEST, 'b4': f'--beam 4 {HW} --bias', 'b8': f'--beam 8 {HW} --bias', 'nohw': '--beam 4 --bias',
           'vad': f'--beam 4 {HW} --bias --vad'}
     if HAS_LM:
-        NB['lm'] = f'--beam 4 {HW} --bias --lm models/rnnlm/rnnlm.onnx --lm-scale 0.2'
+        NB.update({'lm07': f'--beam 8 {HW} --bias {LMF}0.7', 'lm03b4': f'--beam 4 {HW} --bias {LMF}0.3'})
     run_nollm(NB, 'nbest')
     hyps = ' '.join(f'{n}={W}/nollm_{n}.jsonl' for n in NB if os.path.exists(f'{W}/nollm_{n}.jsonl'))
     _, o = sh(f'python scripts/asr_rescore.py --hyps {hyps} --dump {DUMP} --out-dir {W}/rescore', 'rescore')
@@ -205,7 +214,7 @@ def parse_score(o):
             'n_over_30s': int(t.group(2)) if t else None}
 
 if STAGE == 'agent':
-    BASE = f'--beam 4 {HW} --bias --prefetch {LLM}'
+    BASE = f'{BEST} --prefetch {LLM}'
     FS = find_input('asr_train_plain.jsonl')
     AG = {'base': BASE, 'text_oracle': f'--text {LLM}', 'p3': f'{BASE} --snap-all', 'p4': f'{BASE} --alt-hyp',
           'p5': f'{BASE} --fewshot 3 --fewshot-file {FS}', 'p345': f'{BASE} --snap-all --alt-hyp --fewshot 3 --fewshot-file {FS}'}
