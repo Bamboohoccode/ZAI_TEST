@@ -82,9 +82,18 @@ def parse_args(argv=None):
     g.add_argument("--mapper-device", help="GPU riêng cho mapper")
     g.add_argument("--mapper-gpu-mem", type=float, default=0.1)
     g.add_argument("--verify-rounds", type=int, default=config.VERIFY_ROUNDS)
+    g = ap.add_argument_group("xử lý lỗi ASR ở tầng agent (docs/khao_sat_pipeline_asr.pdf)")
+    g.add_argument("--snap-all", action="store_true",
+                   help="P3: snap mọi tham số chuỗi ngắn về tên có thật gần âm nhất (kết quả tool, history, hồ sơ; enum)")
+    g.add_argument("--alt-hyp", action="store_true", help="P4: câu cuối kèm bản nhận dạng không bias + từ conf thấp (cần --bias)")
+    g.add_argument("--alt-conf", type=float, default=0.5, help="P4: ngưỡng conf của 'từ nghe không chắc'")
+    g.add_argument("--fewshot", type=int, default=0, help="P5: số ví dụ 'câu ASR nhiễu -> tool call' (train-split) trong prompt")
+    g.add_argument("--fewshot-file", default=config.ASR_DUMP, help="P5: dump ASR train (eval_asr.py --dump)")
     g.add_argument("--time-limit", type=float, default=0,
                    help=f"giây mỗi mẫu: quá hạn thì dừng gọi tool, nộp những gì đã chạy (BTC: {config.TIME_LIMIT_S}); 0 = không chặn")
     a = ap.parse_args(argv)
+    if a.alt_hyp:
+        a.bias = True  # bản nghe khác = bản không bias của --bias
     if a.prefetch:
         if a.text or a.llm == "gold":
             ap.error("--prefetch cần LLM thật + ASR: không dùng với --text / --llm gold")
@@ -149,6 +158,11 @@ def main(argv=None):
         a.mapper_device, a.llm_backend, a.mapper, a.mapper_lora, a.mapper_gpu_mem, a.seed, 2048, 256,
         {"enable_thinking": False}, a.eager)
     rounds = 0 if gold else a.verify_rounds
+    a.fewshot_obj = None
+    if a.fewshot:
+        from lifemate.agent.fewshot import FewShot
+        a.fewshot_obj = FewShot(a.fewshot_file, a.root / "train" / "train.jsonl", a.fewshot)
+        print(f"few-shot: {len(a.fewshot_obj.pool)} ví dụ train-split, {a.fewshot}/mẫu")
 
     t_start, slow, shown_tb, sub = time.time(), [], False, []
     with open(a.out, "w", encoding="utf-8") as fout, open(a.out + ".trace.jsonl", "w", encoding="utf-8") as ftr:

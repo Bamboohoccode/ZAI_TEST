@@ -185,6 +185,46 @@ def test_end_to_end_gold(capsys=None):
         assert (Path(tmp) / "sub.jsonl.trace.jsonl").exists()
 
 
+
+def test_snap_all_and_alt_hints():
+    from lifemate.agent.fewshot import alt_hints
+    from lifemate.agent.loop import snap_all_args
+    from lifemate.bias import snap_candidates
+    assert snap_candidates("hăng", ["Hằng", "Tuấn"]) == ("Hằng", [])
+    assert snap_candidates("Hằng", ["Hằng"]) == ("Hằng", [])
+    v, tied = snap_candidates("lan", ["Lan Anh", "Lan Hương", "Nguyễn Thị Lan"])  # nhiều "Lan": không đoán
+    assert v == "lan" or not tied
+    cat = {"sms.send": {"kind": "write", "parameters": {"properties": {
+        "to_name": {"type": "string"}, "message": {"type": "string", "x-match": "fuzzy"},
+        "phone_number": {"type": "string", "description": "Số điện thoại, giữ nguyên chuỗi"},
+        "mode": {"type": "string", "enum": ["nhanh", "thường"]}}}}}
+    c = {"name": "sms.send", "arguments": {"to_name": "chị hăng", "message": "chị hăng ơi", "phone_number": "0912", "mode": "nhan"}}
+    trace = []
+    snap_all_args(c, cat, {"contacts": ["Chị Hằng"]}, [], trace)
+    assert c["arguments"] == {"to_name": "Chị Hằng", "message": "chị hăng ơi", "phone_number": "0912", "mode": "nhanh"}, c
+    assert alt_hints("nhắn chị hăng", "nhắn chị hằng", [0.9, 0.9, 0.3]) == \
+        '(bản nhận dạng khác của câu này: "nhắn chị hằng")\n(từ nghe không chắc: hăng)'
+    assert alt_hints("bật đèn", "bật đèn", [0.9, 0.95]) == ""
+
+
+def test_fewshot():
+    from lifemate.agent.fewshot import FewShot
+    with tempfile.TemporaryDirectory() as tmp:
+        dump, tr = Path(tmp) / "d.jsonl", Path(tmp) / "t.jsonl"
+        dump.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in [
+            {"id": "train_0001", "turn": "QUERY", "hyp": "bật đèn phòng khách"},
+            {"id": "train_0002", "turn": "QUERY", "hyp": "nhắn tin cho mẹ"},
+            {"id": "train_0009", "turn": "QUERY", "hyp": "bật đèn phòng ngủ"}]), encoding="utf-8")  # held-out: bỏ
+        tr.write_text("".join(json.dumps({"id": i, "label": {"tool_calls": c}}, ensure_ascii=False) + "\n" for i, c in [
+            ("train_0001", [{"name": "smart_home.light_set", "arguments": {"room": "phòng khách"}}]),
+            ("train_0002", []), ("train_0009", [])]), encoding="utf-8")
+        fs = FewShot(dump, tr, k=1)
+        assert [p[0] for p in fs.pool] == ["train_0001", "train_0002"]
+        out = fs.render("bật giúp cái đèn phòng ngủ")
+        assert "bật đèn phòng khách" in out and "smart_home.light_set" in out and "train_0009" not in out
+        assert fs.select("bật đèn phòng khách", exclude="train_0001")[0][0] == "train_0002"
+
+
 if __name__ == "__main__":
     sys.path.insert(0, str(ROOT / "scripts"))
     for name, fn in list(globals().items()):

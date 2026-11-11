@@ -6,7 +6,7 @@ import time
 
 from lifemate.agent.messages import assistant_msg, clip, parse_calls, parse_verdict, unseen_ids
 from lifemate.agent.prompts import PREFETCH, REPLAN, VERIFY
-from lifemate.bias import _walk as walk_entities, add_to_pool, snap_value, text_entities
+from lifemate.bias import _walk as walk_entities, add_to_pool, key, ratio, snap_candidates, snap_value, text_entities, tokens
 from lifemate.config import MAX_NEW, MAX_STEPS, VERIFY_ROUNDS
 
 
@@ -47,10 +47,49 @@ def snap_search_keys(call, pools, trace):
             trace.append({"snap": {"tool": call["name"], "arg": k, "from": old, "to": new}})
 
 
+# P3: tham số chuỗi KHÔNG snap: định dạng / ID / số / văn bản tự do
+NO_SNAP_DESC = re.compile(r"ISO|YYYY|HH:MM|số điện thoại|\bID\b|\bid\b|[Mm]ã |email|URL", re.I)
+
+
+def snap_all_args(call, catalog, pools, extra, trace, thr=0.8):
+    """P3, phân giải thực thể theo phát âm cho mọi tool: mọi tham số chuỗi ngắn (tên người / quán / phòng / kênh ...) ->
+    tên có thật gần âm nhất trong kho tên của mẫu (kết quả tool đã gọi, history, hồ sơ). Tham số có enum -> giá trị enum
+    gần nhất. Nhiều ứng viên ngang nhau -> không đổi (ghi trace)."""
+    props = catalog.get(call["name"], {}).get("parameters", {}).get("properties", {})
+    pool = list(dict.fromkeys([e for p in (pools or {}).values() for e in p] + list(extra)))
+    for k, v in list(call["arguments"].items()):
+        p = props.get(k) or {}
+        if not isinstance(v, str) or not v.strip() or k == SEARCH_KEYS.get(call["name"]):
+            continue
+        if re.search(r"\d", v) or len(v.split()) > 5:
+            continue
+        if p.get("enum"):
+            enum = [e for e in p["enum"] if isinstance(e, str)]
+            if v in enum or not enum:
+                continue
+            kv = key(tokens(v)) or v.lower()
+            best = max(enum, key=lambda e: ratio(kv, key(tokens(e)) or e.lower()))
+            if ratio(kv, key(tokens(best)) or best.lower()) >= 0.7:
+                call["arguments"][k] = best
+                trace.append({"snap_all": {"tool": call["name"], "arg": k, "from": v, "to": best, "enum": True}})
+            continue
+        if p.get("x-ref") or p.get("x-match") == "fuzzy" or p.get("format") or p.get("type") not in (None, "string"):
+            continue
+        if NO_SNAP_DESC.search(p.get("description", "")) or not pool:
+            continue
+        new, tied = snap_candidates(v, pool, thr)
+        if tied:
+            trace.append({"snap_all_tie": {"tool": call["name"], "arg": k, "value": v, "candidates": tied[:5]}})
+        elif new != v:
+            call["arguments"][k] = new
+            trace.append({"snap_all": {"tool": call["name"], "arg": k, "from": v, "to": new}})
+
+
 def run_agent(env, llm, msgs, tools, catalog, trace, rounds=VERIFY_ROUNDS, deadline=float("inf"), pools=None, pre_done=(),
-              max_len=None):
+              max_len=None, snap_all=None):
     """pre_done: [(tool, args, result)] đã chạy trên env trước đó (--prefetch), đã có trong msgs: không gọi lại tool đọc đó.
-    max_len: max_model_len của LLM; kết quả tool làm hội thoại sắp tràn -> dừng, giữ các call đã chạy (thay vì lỗi vLLM)."""
+    max_len: max_model_len của LLM; kết quả tool làm hội thoại sắp tràn -> dừng, giữ các call đã chạy (thay vì lỗi vLLM).
+    snap_all: None = tắt P3; list tên bổ sung (hồ sơ...) -> snap mọi tham số chuỗi về tên có thật (snap_all_args)."""
     done = {json.dumps({"name": n, "arguments": a}, sort_keys=True, ensure_ascii=False) for n, a, _ in pre_done}
     for _ in range(MAX_STEPS):
         if time.time() > deadline:  # keep the calls that already ran
@@ -68,6 +107,8 @@ def run_agent(env, llm, msgs, tools, catalog, trace, rounds=VERIFY_ROUNDS, deadl
         for c in calls:
             if pools and pools.get(c["name"].split(".")[0]):
                 snap_search_keys(c, pools, trace)
+            if snap_all is not None:
+                snap_all_args(c, catalog, pools, snap_all, trace)
             key = json.dumps(c, sort_keys=True, ensure_ascii=False)
             v = env.validate(c["name"], c["arguments"])  # not logged: invalid calls never reach the submission
             # the planner's own message is excluded: it would make every invented ID look seen

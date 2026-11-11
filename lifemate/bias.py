@@ -273,3 +273,25 @@ def snap_value(value, entities, thr=0.8):
         if r > best[0]:
             best = (r, disp)
     return best[1] if best[0] >= thr else value
+
+
+def snap_candidates(value, entities, thr=0.8, margin=0.05):
+    """P3: value -> (tên đã snap, [ứng viên ngang nhau]). Giữ nguyên nếu đã khớp, không đủ gần, hoặc có >= 2 tên khác nhau
+    gần ngang nhau (cách ứng viên tốt nhất < margin): không đoán, để planner hỏi lại."""
+    if not isinstance(value, str) or not value.strip():
+        return value, []
+    if any(value.lower() == e.lower() for e in entities):
+        return value, []
+    k = key(tokens(value))
+    scored = {}
+    for _surf, _w, ek, disp in _aliases(entities):
+        r = ratio(k, ek)
+        if r > scored.get(disp, 0.0):
+            scored[disp] = r
+    ranked = sorted(scored.items(), key=lambda x: -x[1])
+    if not ranked or ranked[0][1] < thr:
+        return value, []
+    tied = [d for d, r in ranked if r >= ranked[0][1] - margin and d.lower() != ranked[0][0].lower()]
+    if tied:
+        return value, [ranked[0][0]] + tied
+    return ranked[0][0], []

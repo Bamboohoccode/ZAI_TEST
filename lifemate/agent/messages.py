@@ -66,12 +66,13 @@ def hints(text):
     return "\nGiờ trích từ lời người dùng (24h; ngày xem bảng lịch trên, dùng đúng giờ này):\n" + h if h else ""
 
 
-def build_messages(item, texts, keep):
-    """texts: one per user turn (history order, then the latest). keep: how many history user turns to keep."""
+def build_messages(item, texts, keep, extra=""):
+    """texts: one per user turn (history order, then the latest). keep: how many history user turns to keep.
+    extra: nối vào cuối system prompt (ví dụ few-shot, P5)."""
     ctx = item["context"]
     system = SYSTEM.format(now=ctx["current_time"], tz=ctx["timezone"], dates=date_table(ctx["current_time"]) + hints(texts[-1]),
                            loc=json.dumps(ctx.get("location"), ensure_ascii=False),
-                           profile=json.dumps(ctx.get("user_profile"), ensure_ascii=False))
+                           profile=json.dumps(ctx.get("user_profile"), ensure_ascii=False)) + extra
     hist, ti = [], 0
     for h in item["history"]:
         if h["role"] == "user":
@@ -89,13 +90,15 @@ def build_messages(item, texts, keep):
     return [{"role": "system", "content": system}, *hist, {"role": "user", "content": texts[-1]}]
 
 
-def fit_messages(item, texts, llm, tools, max_len=MAX_CTX):
+def fit_messages(item, texts, llm, tools, max_len=MAX_CTX, extra=""):
     """build_messages, bỏ bớt lượt history cũ nhất tới khi vừa ngữ cảnh (max_len = max_model_len của LLM). -> (msgs, keep)."""
     keep = len(texts) - 1
-    msgs = build_messages(item, texts, keep)
+    msgs = build_messages(item, texts, keep, extra)
     while keep and llm.n_tokens(msgs, tools) > max_len - MAX_NEW * 2:
         keep -= 1
-        msgs = build_messages(item, texts, keep)
+        msgs = build_messages(item, texts, keep, extra)
+    if extra and llm.n_tokens(msgs, tools) > max_len - MAX_NEW * 2:  # vẫn tràn -> bỏ few-shot
+        return fit_messages(item, texts, llm, tools, max_len)
     return msgs, keep
 
 

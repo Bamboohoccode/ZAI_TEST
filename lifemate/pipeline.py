@@ -8,11 +8,12 @@ import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from lifemate.agent.fewshot import alt_hints
 from lifemate.agent.loop import prefetch_entities, run_agent
 from lifemate.agent.messages import assistant_msg, clip, fit_messages, tool_specs
 from lifemate.agent.prompts import mapper_conv
 from lifemate.asr.decode import decode_turns, run_asr
-from lifemate.bias import _dedup, add_to_pool, app_pools, lexicons_per_turn
+from lifemate.bias import PROFILE_KEYS, _dedup, add_to_pool, app_pools, lexicons_per_turn
 from lifemate.data import user_turns
 from lifemate.text import norm, wer_counts
 from lifemate.vi_num import to_spoken
@@ -36,13 +37,20 @@ class Result:
                 "steps": self.trace, "seconds": round(self.seconds, 2)}
 
 
-def asr_turns(a, item, asr, paths, llm, tools, catalog, pools, trace, common, env=None):
+def asr_turns(a, item, asr, paths, llm, tools, catalog, pools, trace, common, env=None, info=None):
     """ASR mọi lượt (bias theo lượt + fallback). a.prefetch và llm không None: planner gọi tool đọc liên quan một lần trên
     `env` -> tên trong kết quả thêm vào hotword của câu cuối -> decode lại câu cuối.
+    info: dict -> điền "confs" (conf từng từ của mỗi lượt) và "plain" (bản không bias của mỗi lượt, nếu --bias).
     -> (texts, fell, done): done = [(tool, args, result)] đã chạy trên env, đưa vào hội thoại của planner."""
     lexs = lexicons_per_turn(item, common=common) if a.bias else None
-    plain = run_asr(asr, paths, None) if a.bias and a.bias_fallback > 0 else None
-    texts, fell = decode_turns(asr, paths, lexs, a.bias_fallback, plain)
+    pconfs, confs = [], []
+    plain = run_asr(asr, paths, None, pconfs) if a.bias else None
+    texts, fell = decode_turns(asr, paths, lexs, a.bias_fallback, plain if a.bias_fallback > 0 else None, confs)
+    for k, f in enumerate(fell):  # bản fallback = bản không bias: lấy đúng conf của nó
+        if f and pconfs:
+            confs[k] = pconfs[k]
+    if info is not None:
+        info["confs"], info["plain"], info["plain_confs"] = confs, plain or list(texts), pconfs or confs
     if not (a.prefetch and llm is not None):
         return texts, fell, []
     msgs1, _ = fit_messages(item, texts, llm, tools, a.max_len)
@@ -53,9 +61,12 @@ def asr_turns(a, item, asr, paths, llm, tools, catalog, pools, trace, common, en
     new = [e for e in ents if e.lower() not in {x.lower() for x in lexs[-1]}]
     if new:
         lexs[-1] = _dedup(lexs[-1] + new)
-        t2, f2 = decode_turns(asr, paths[-1:], lexs[-1:], a.bias_fallback, plain[-1:] if plain else None)
+        c2 = []
+        t2, f2 = decode_turns(asr, paths[-1:], lexs[-1:], a.bias_fallback, plain[-1:] if plain else None, c2)
         trace.append({"redecode": {"before": texts[-1], "after": t2[0], "n_new_hotwords": len(new), "fallback": f2[0]}})
         texts[-1], fell[-1] = t2[0], f2[0]
+        if info is not None:
+            info["confs"][-1] = pconfs[-1] if f2[0] and pconfs else c2[0]
     return texts, fell, done
 
 
@@ -74,21 +85,31 @@ def run_sample(a, item, ToolEnv, catalog, asr, llm, mapper, common, gold=False, 
             res.raw = [u["audio_text"] for u in turns]
         else:
             paths = [Path(a.root) / a.split / u["audio"] for u in turns]
+            info = {}
             res.raw, fell, pre_done = asr_turns(a, item, asr, paths, None if gold else llm, tools, catalog, pools,
-                                                res.trace, common, env)
+                                                res.trace, common, env, info)
             res.trace.extend({"bias_fallback": k} for k, f in enumerate(fell) if f)
         # mapper phương ngữ (số giữ dạng chữ, planner tự đổi sang tham số); output rỗng -> giữ câu cũ
         res.texts = ([m or r for r, m in zip(res.raw, mapper.chat([mapper_conv(r) for r in res.raw], None,
                                                                    {"enable_thinking": False}))]
                      if mapper else list(res.raw))
-        msgs, res.keep = fit_messages(item, res.texts, llm, tools, a.max_len)
+        planner_texts = list(res.texts)
+        if getattr(a, "alt_hyp", False) and not a.text:  # P4: planner thấy bản nghe khác + từ không chắc của câu cuối
+            h = alt_hints(planner_texts[-1], info["plain"][-1], info["confs"][-1], a.alt_conf)
+            if h:
+                planner_texts[-1] += "\n" + h
+                res.trace.append({"alt_hyp": h})
+        fs = a.fewshot_obj.render(res.texts[-1], exclude=item["id"]) if getattr(a, "fewshot_obj", None) else ""  # P5
+        msgs, res.keep = fit_messages(item, planner_texts, llm, tools, a.max_len, fs)
         if pre_done:  # tool đọc của bước prefetch đã chạy trên env: planner thấy kết quả, đi tiếp từ đó
             msgs.append(assistant_msg("", [{"name": n, "arguments": x} for n, x, _ in pre_done]))
             msgs += [{"role": "tool", "content": clip(r)} for _, _, r in pre_done]
         if gold:
             llm.queue = list(item["label"]["tool_calls"])
+        prof = item["context"].get("user_profile") or {}
+        snap_all = ([str(prof[k]) for k in PROFILE_KEYS if prof.get(k)] if getattr(a, "snap_all", False) else None)  # P3
         run_agent(env, llm, msgs, tools, catalog, res.trace, rounds, deadline=deadline, pools=pools, pre_done=pre_done,
-                  max_len=a.max_len)
+                  max_len=a.max_len, snap_all=snap_all)
     except Exception as e:  # giữ những gì đã chạy; mẫu lỗi vẫn phải có dòng trong submission
         res.trace.append({"error": f"{type(e).__name__}: {str(e)[:300]}", "traceback": traceback.format_exc()})
     res.calls, res.state_hash = env.get_tool_calls(), env.get_state_hash()
@@ -111,13 +132,17 @@ def run_asr_only(a, items, ToolEnv, catalog, asr, llm, common, out_path, mapper=
             trace = []
             env = ToolEnv(a.split, item["id"], root=str(a.root)) if a.prefetch else None
             tools = tool_specs(item, catalog) if a.prefetch else []
-            texts, fell, _ = asr_turns(a, item, asr, paths, llm, tools, catalog, None, trace, common, env)
+            info = {}
+            texts, fell, _ = asr_turns(a, item, asr, paths, llm, tools, catalog, None, trace, common, env, info)
             # mapper phương ngữ như pipeline đầy đủ; output rỗng -> giữ câu ASR
             mapped = ([m or r for r, m in zip(texts, mapper.chat([mapper_conv(r) for r in texts], None,
                                                                   {"enable_thinking": False}))] if mapper else None)
             rows = []
             for k, (u, hyp) in enumerate(zip(turns, texts)):
-                row = {"turn": "QUERY" if k == len(turns) - 1 else f"u{k + 1}", "audio": u["audio"], "asr": hyp}
+                row = {"turn": "QUERY" if k == len(turns) - 1 else f"u{k + 1}", "audio": u["audio"], "asr": hyp,
+                       "conf": info["confs"][k]}
+                if a.bias:
+                    row["plain"], row["plain_conf"] = info["plain"][k], info["plain_confs"][k]
                 if mapped is not None:
                     row["mapped"] = mapped[k]
                 if fell[k]:
