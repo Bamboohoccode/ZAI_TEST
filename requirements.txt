@@ -19,3 +19,4 @@ torch>=2.4
 transformers>=4.45
 onnx>=1.16
 onnxruntime>=1.18              # so khớp ONNX với torch sau khi export RNNLM
+kaldi-native-fbank

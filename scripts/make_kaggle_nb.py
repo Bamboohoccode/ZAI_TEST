@@ -2,7 +2,8 @@
 
     asr    dump ASR train -> RNNLM -> WER held-out của mọi cấu hình decode (eval_asr.py)
     nollm  run.py --no-llm (không agent gọi tool): hotword cố định / bias / prefetch, hoặc lưới --grid
-    p12    dump ASR train + nhiều bản decode held-out -> P1 (bảng nhầm lẫn + LLM chấm) và P2 (N-best + LLM chấm lại)
+    p12    dump ASR train + nhiều bản decode held-out -> P1 (bảng nhầm lẫn + LLM chấm), P2 (N-best + LLM chấm lại),
+           P6 (CTC word spotter)
     agent  SCORE held-out của các biến thể agent: baseline, mốc 0 (--text), P3 --snap-all, P4 --alt-hyp, P5 --fewshot
 
     python scripts/make_kaggle_nb.py notebooks/kaggle.ipynb                         # stage asr (mặc định)
@@ -51,7 +52,7 @@ BUDGET_H = 11.0   # Kaggle chặn 12 h: quá ngân sách thì bỏ các biến t
 !git clone -q -b $BRANCH https://github.com/Bamboohoccode/ZAI_TEST.git /tmp/ZAI_TEST || (cd /tmp/ZAI_TEST && git pull -q)
 %cd /tmp/ZAI_TEST
 !git log --oneline -1
-!pip install -q sherpa-onnx==2.0.1 sentencepiece soundfile silero-vad librosa onnx onnxruntime vllm 2>&1 | grep -v -i "warning\\|dependency conflicts\\|incompatible" | tail -20
+!pip install -q sherpa-onnx==2.0.1 sentencepiece soundfile silero-vad librosa onnx onnxruntime kaldi-native-fbank vllm 2>&1 | grep -v -i "warning\\|dependency conflicts\\|incompatible" | tail -20
 !nvidia-smi --query-gpu=name,memory.total --format=csv
 """)
 
@@ -185,6 +186,11 @@ if STAGE == 'p12':
     if os.path.exists(f'{W}/rescore/sweep.json'):
         sw = json.load(open(f'{W}/rescore/sweep.json'))
         RES['rescore'] = {'rows': sw['rows'], 'best': sw['best'], 'cv': sw['cv']}; save()
+    # P6: CTC word spotter trên đầu CTC (jit_script.pt), hotword theo lượt, gộp vào câu ASR chính
+    sh(f'python scripts/ctc_spotter.py --root $DATA --hyps {W}/nollm_main.jsonl --out-dir {W}/ctc', 'ctc_spotter')
+    if os.path.exists(f'{W}/ctc/sweep.json'):
+        sw = json.load(open(f'{W}/ctc/sweep.json'))
+        RES['ctc_spotter'] = {'baseline': sw['baseline'], 'best': sw['best'], 'cv': sw['cv']}; save()
 """)
 
 md("## Stage agent: SCORE held-out (mốc 0 = --text; P3 / P4 / P5 bật từng cái trên baseline)")
