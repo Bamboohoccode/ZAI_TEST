@@ -96,10 +96,12 @@ def run_sample(a, item, ToolEnv, catalog, asr, llm, mapper, common, gold=False, 
     return res
 
 
-def run_asr_only(a, items, ToolEnv, catalog, asr, llm, common, out_path):
-    """Chỉ phần âm thanh (không mapper / planner): mỗi dòng {"id", "turns": [{"turn", "audio", "asr", ["ref"]}]}.
-    Split có audio_text (train) -> in WER dạng đọc (so theo text.canon). --prefetch cần LLM (chạy tool đọc trên env)."""
-    tot = [0, 0]
+def run_asr_only(a, items, ToolEnv, catalog, asr, llm, common, out_path, mapper=None):
+    """Chỉ phần xử lý lời nói, không agent gọi tool (--no-llm / --asr-only): ASR (+bias, +prefetch nếu bật) [+ mapper].
+    Mỗi dòng {"id", "turns": [{"turn", "audio", "asr", ["mapped"], ["ref"]}]}.
+    Split có audio_text (train) -> in WER dạng đọc của bản ASR và (nếu có mapper) bản sau mapper.
+    --prefetch cần LLM (chạy tool đọc trên env để lấy hotword)."""
+    tot, tot_m = [0, 0], [0, 0]
     t_start = time.time()
     with open(out_path, "w", encoding="utf-8") as fout:
         for i, item in enumerate(items):
@@ -110,9 +112,14 @@ def run_asr_only(a, items, ToolEnv, catalog, asr, llm, common, out_path):
             env = ToolEnv(a.split, item["id"], root=str(a.root)) if a.prefetch else None
             tools = tool_specs(item, catalog) if a.prefetch else []
             texts, fell, _ = asr_turns(a, item, asr, paths, llm, tools, catalog, None, trace, common, env)
+            # mapper phương ngữ như pipeline đầy đủ; output rỗng -> giữ câu ASR
+            mapped = ([m or r for r, m in zip(texts, mapper.chat([mapper_conv(r) for r in texts], None,
+                                                                  {"enable_thinking": False}))] if mapper else None)
             rows = []
             for k, (u, hyp) in enumerate(zip(turns, texts)):
                 row = {"turn": "QUERY" if k == len(turns) - 1 else f"u{k + 1}", "audio": u["audio"], "asr": hyp}
+                if mapped is not None:
+                    row["mapped"] = mapped[k]
                 if fell[k]:
                     row["bias_fallback"] = True
                 if k == len(turns) - 1 and trace:
@@ -121,10 +128,16 @@ def run_asr_only(a, items, ToolEnv, catalog, asr, llm, common, out_path):
                     row["ref"] = u["audio_text"]
                     e, n = wer_counts(to_spoken(u["audio_text"], norm(hyp)) or norm(u["audio_text"]), norm(hyp))
                     tot[0], tot[1] = tot[0] + e, tot[1] + n
+                    if mapped is not None:
+                        hm = norm(mapped[k])
+                        e, n = wer_counts(to_spoken(u["audio_text"], hm) or norm(u["audio_text"]), hm)
+                        tot_m[0], tot_m[1] = tot_m[0] + e, tot_m[1] + n
                 rows.append(row)
             fout.write(json.dumps({"id": item["id"], "turns": rows}, ensure_ascii=False) + "\n")
-            print(f"[{i + 1}/{len(items)}] {item['id']} {len(rows)} lượt {time.time() - t0:.1f}s | {rows[-1]['asr'][:120]}",
-                  flush=True)
+            print(f"[{i + 1}/{len(items)}] {item['id']} {len(rows)} lượt {time.time() - t0:.1f}s | {rows[-1]['asr'][:120]}"
+                  + (f" | map: {rows[-1]['mapped'][:120]}" if mapped is not None else ""), flush=True)
     print(f"\n{len(items)} mẫu -> {out_path} | {(time.time() - t_start) / max(len(items), 1):.1f}s/mẫu")
     if tot[1]:
         print(f"WER dạng đọc: {tot[0] / tot[1]:.4f} ({tot[1]} từ)")
+    if tot_m[1]:
+        print(f"WER sau mapper: {tot_m[0] / tot_m[1]:.4f} ({tot_m[1]} từ)")

@@ -6,6 +6,8 @@
     python scripts/run.py --root DATA --split train --heldout --bias --prefetch --out sub_heldout.jsonl
     # chỉ ASR -> WER (không mapper / planner)
     python scripts/run.py --root DATA --split train --heldout --asr-only --lm models/rnnlm/rnnlm.onnx --beam 8
+    # không agent gọi tool, vẫn bias + prefetch + mapper -> transcript + WER trước / sau mapper
+    python scripts/run.py --root DATA --split train --heldout --no-llm --bias --prefetch
     # kiểm tra env / scorer không cần GPU: bỏ ASR, phát lại nhãn (điểm phải ~1.0)
     python scripts/run.py --root DATA --split train --text --llm gold --mapper none --limit 50
 """
@@ -60,7 +62,9 @@ def parse_args(argv=None):
     g.add_argument("--prefetch", action="store_true",
                    help="sau ASR, LLM gọi tool đọc liên quan một lần (trên env thật, tính vào tool_calls) -> tên trong kết quả "
                         "làm hotword -> decode lại câu cuối (kéo theo --bias)")
-    g.add_argument("--asr-only", action="store_true", help="chỉ ASR (+prefetch), không mapper / planner: in WER")
+    g.add_argument("--no-llm", action="store_true",
+                   help="bỏ agent gọi tool (planner / verifier); vẫn chạy ASR, --bias, --prefetch, mapper -> transcript + WER")
+    g.add_argument("--asr-only", action="store_true", help="= --no-llm --mapper none: chỉ ASR (+prefetch), in WER")
     g.add_argument("--text", action="store_true", help="dùng audio_text thay cho ASR (chỉ train)")
 
     g = ap.add_argument_group("LLM (vLLM)")
@@ -83,9 +87,11 @@ def parse_args(argv=None):
         if a.text or a.llm == "gold":
             ap.error("--prefetch cần LLM thật + ASR: không dùng với --text / --llm gold")
         a.bias = True  # hotword decode lại cần contextual graph của --bias
-    if a.asr_only and a.text:
-        ap.error("--asr-only cần ASR, không dùng với --text")
-    if a.asr_only and a.out == "submission.jsonl":  # đừng ghi đè file nộp bằng output không có tool call
+    if a.asr_only:
+        a.no_llm, a.mapper = True, "none"
+    if a.no_llm and a.text:
+        ap.error("--no-llm / --asr-only cần ASR, không dùng với --text")
+    if a.no_llm and a.out == "submission.jsonl":  # đừng ghi đè file nộp bằng output không có tool call
         a.out = "asr_out.jsonl"
     a.root = Path(a.root).expanduser()
     return a
@@ -124,10 +130,15 @@ def main(argv=None):
                            hi=a.hotword_hi, lo=a.hotword_lo, glossary_score=a.glossary_score, beam=a.beam,
                            hotwords_file=a.hotwords_file, lm=a.lm, lm_scale=a.lm_scale, vad=a.vad)
 
-    if a.asr_only:
+    if a.no_llm:
+        # LLM chính chỉ cần cho prefetch (hoặc khi mapper dùng chung nó); không có planner / verifier
+        need_llm = a.prefetch or a.mapper == "same"
         llm = make_llm(a.llm_device, a.llm_backend, a.llm, a.llm_lora, a.gpu_mem, a.seed, a.max_len, 256,
-                       {"enable_thinking": False}, a.eager) if a.prefetch else None
-        return run_asr_only(a, items, ToolEnv, catalog, asr, llm, common, a.out)
+                       {"enable_thinking": False}, a.eager) if need_llm else None
+        mapper = None if a.mapper == "none" else llm if a.mapper == "same" else make_llm(
+            a.mapper_device, a.llm_backend, a.mapper, a.mapper_lora, a.mapper_gpu_mem, a.seed, 2048, 256,
+            {"enable_thinking": False}, a.eager)
+        return run_asr_only(a, items, ToolEnv, catalog, asr, llm, common, a.out, mapper)
 
     llm = GoldLLM() if gold else make_llm(a.llm_device, a.llm_backend, a.llm, a.llm_lora, a.gpu_mem, a.seed, a.max_len,
                                           config.MAX_NEW, None, a.eager)
