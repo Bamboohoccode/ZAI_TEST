@@ -19,6 +19,7 @@ import re
 import sys
 import time
 import traceback
+from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -498,13 +499,18 @@ quả để làm hotword cho lần decode lại và đưa vào prompt refine."""
 def asr_with_prefetch(a, item, asr, paths, llm, tools, catalog, pools, trace, common, env=None):
     """ASR mọi lượt (bias theo lượt + fallback). --prefetch (llm không None): planner gọi tool đọc liên quan 1 lần trên `env`
     -> tên trong kết quả thêm vào hotword QUERY -> decode lại QUERY; tên cũng đưa vào prompt refine của QUERY.
-    -> (wls, keeps, fell, names, done): done = [(tool, args, result)] đã chạy trên env, đưa vào hội thoại của planner."""
+    -> (wls, keeps, fell, names, done, alts): done = [(tool, args, result)] đã chạy trên env, đưa vào hội thoại của planner;
+    alts[k] = các bản decode khác của lượt k (bản không bias, --alt-zipformer) làm N-best cho refine."""
     lexs = lexicons_per_turn(item, common=common) if a.bias else None
-    plain = run_asr(asr, paths, None) if a.bias and a.bias_fallback > 0 else None
+    plain = run_asr(asr, paths, None) if a.bias and (a.bias_fallback > 0 or a.refine) else None
     wls, keeps, fell = decode_turns(asr, paths, lexs, a.bias_fallback, plain)
     names = [None] * len(wls)
+    alts = [[] for _ in wls]
+    for src in (plain, run_asr(a.alt_asr, paths, None) if getattr(a, "alt_asr", None) else None):
+        for k, wl in enumerate(src or ()):
+            alts[k].append([w for w, _ in wl])
     if not (a.prefetch and llm is not None):
-        return wls, keeps, fell, names, []
+        return wls, keeps, fell, names, [], alts
     pass1 = [" ".join(w for w, _ in wl) for wl in wls]
     msgs1, _ = fit_messages(item, pass1, llm, tools, a.max_len)
     done, ents = prefetch_entities(llm, msgs1, tools, catalog, env, trace, common)
@@ -520,7 +526,7 @@ def asr_with_prefetch(a, item, asr, paths, llm, tools, catalog, pools, trace, co
         wls[-1], keeps[-1], fell[-1] = w2[0], k2[0], f2[0]
     if ents:
         names[-1] = [e for e in ents if len(e.split()) <= 4]  # tên ngắn; tiêu đề dài đã tách ở prefetch
-    return wls, keeps, fell, names, done
+    return wls, keeps, fell, names, done, alts
 
 
 def fit_messages(item, texts, llm, tools, max_len=MAX_CTX):
@@ -531,6 +537,11 @@ def fit_messages(item, texts, llm, tools, max_len=MAX_CTX):
         keep -= 1
         msgs = build_messages(item, texts, keep)
     return msgs, keep
+
+
+def refine_kw(a, alts, stats):
+    """tham số refine chung cho hai chế độ chạy (xem --refine-loose / --refine-max-dist / --refine-free-dist)."""
+    return dict(alts=alts, strict=not a.refine_loose, max_dist=a.refine_max_dist, free_dist=a.refine_free_dist, stats=stats)
 
 
 def hotword_words(lex):
@@ -552,6 +563,7 @@ def run_audio_only(a, items, asr, t_start, llm=None, cands=None, catalog=None):
     # từ thường của tập (để không coi chữ hoa đầu câu là tên riêng khi lấy entity từ text)
     common = frozenset(common_words(root / a.split / f"{a.split}.jsonl")) if a.bias else frozenset()
     tot = {"asr": [0, 0], "refine": [0, 0]}
+    rstats = Counter()  # refine: số chỗ sửa nhận / bỏ theo lý do
     sweep = {t: [0, 0] for t in THR_SWEEP}  # thr -> [marked, marked & sai]
     n_words = n_wrong = n_sure = 0
     with open(a.out, "w", encoding="utf-8") as fout:
@@ -561,10 +573,11 @@ def run_audio_only(a, items, asr, t_start, llm=None, cands=None, catalog=None):
             paths = [root / a.split / u["audio"] for u in turns]
             trace = []
             env = ToolEnv(a.split, item["id"], root=str(root)) if a.prefetch else None
-            wls, keeps, fell, names, _ = asr_with_prefetch(a, item, asr, paths, llm, tool_specs(item, catalog) if a.prefetch else [],
+            wls, keeps, fell, names, _, alts = asr_with_prefetch(a, item, asr, paths, llm, tool_specs(item, catalog) if a.prefetch else [],
                                                            catalog, None, trace, common, env)
             asr_out = [" ".join(w for w, _ in wl) for wl in wls]
-            fix, marked = refine(llm if a.refine else None, wls, cands, a.conf_thr, a.cand_k, keep=keeps, names=names)
+            fix, marked = refine(llm if a.refine else None, wls, cands, a.conf_thr, a.cand_k, keep=keeps, names=names,
+                                 **refine_kw(a, alts, rstats))
             rows = []
             for k, (u, wl, r0, r1, r2) in enumerate(zip(turns, wls, asr_out, marked, fix)):
                 row = {"turn": "QUERY" if k == len(turns) - 1 else f"u{k + 1}", "audio": u["audio"], "asr": r0,
@@ -602,6 +615,9 @@ def run_audio_only(a, items, asr, t_start, llm=None, cands=None, catalog=None):
         print(f"WER dạng đọc, ASR thô        : {tot['asr'][0] / tot['asr'][1]:.4f}")
         if llm is not None and a.refine:
             print(f"WER dạng đọc, sau LLM refine : {tot['refine'][0] / tot['refine'][1]:.4f}")
+    if rstats:
+        print("refine " + ("(kiểu cũ, nhận/bỏ cả câu)" if a.refine_loose else "(chặt, xét từng chỗ sửa)") + ": "
+              + ", ".join(f"{k} {v}" for k, v in rstats.most_common()))
     if n_words:
         if n_sure == n_words:
             print("CẢNH BÁO: mọi từ có conf = 1 -> sherpa-onnx không trả ys_log_probs, refine sẽ không đánh dấu gì")
@@ -642,6 +658,19 @@ def main():
     ap.add_argument("--refine", action="store_true",
                     help="bật LLM refine câu ASR (mặc định TẮT: trên train, refine làm WER dạng đọc tăng 11.6%% -> 15.0%% "
                          "và đổi nghĩa số / thời gian / hành động / phủ định); tắt thì vẫn đánh dấu `marked`, chỉ không gọi LLM sửa")
+    ap.add_argument("--refine-loose", action="store_true",
+                    help="refine kiểu cũ: nhận/bỏ cả câu LLM trả về. Mặc định (chặt): xét TỪNG chỗ LLM sửa, chỉ nhận chỗ chạm từ bị "
+                         "đánh dấu (conf thấp hoặc các bản decode khác nhau), đọc gần giống chữ cũ, không đổi số / phủ định "
+                         "(trừ khi bản decode khác hoặc tên --prefetch có đúng cụm đó)")
+    ap.add_argument("--refine-max-dist", type=float, default=1.0,
+                    help="chặt: đổi 1-1 từng từ phải có vi_phon.dist <= ngần này (sang/xăng 0.45, la/lan 1.0, hai/ba 1.5)")
+    ap.add_argument("--refine-free-dist", type=float, default=0.0,
+                    help="chặt: cho sửa cả từ KHÔNG bị đánh dấu nếu đọc rất gần (dist <= ngần này, vd. 0.3: thúc/thuốc, "
+                         "tốc/tóc); 0 = không cho")
+    ap.add_argument("--alt-zipformer",
+                    help="model thứ hai decode greedy cùng audio làm N-best cho refine (chỗ hai model nghe khác nhau được "
+                         "đánh dấu): HF id / thư mục, vd. hynt/Zipformer-30M-RNNT-6000h; \"same\" = model chính, greedy, không LM. "
+                         "Khi có --bias, bản decode không bias đã luôn được dùng làm N-best")
     ap.add_argument("--conf-thr", type=float, default=0.6, help="từ có confidence < ngưỡng thì đánh dấu cho LLM sửa")
     ap.add_argument("--cand-k", type=int, default=3, help="số ứng viên mỗi từ")
     ap.add_argument("--cand-train", default=str(Path(__file__).resolve().parent / "data" / "asr_train_plain.jsonl"),
@@ -666,6 +695,8 @@ def main():
     ap.add_argument("--no-llm", action="store_true",
                     help="chỉ chạy phần xử lý âm thanh (VAD/ASR -> refine), không mapper/planner/tool; "
                          "ghi text từng bước ra --out (mặc định asr_out.jsonl), split có nhãn -> in WER")
+    ap.add_argument("--ids", help="chỉ chạy các sample này: \"train_0001,train_0003\" hoặc file txt mỗi dòng 1 id "
+                                  "(vd. data/asr_sai_nghia_ids.txt)")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
@@ -715,6 +746,11 @@ def main():
     if a.heldout:
         from hotwords.mine_hotwords import is_heldout
         items = [it for it in items if is_heldout(it["id"])]
+    if a.ids:  # "train_0001,train_0003" hoặc file txt mỗi dòng 1 id (id lượt "train_0008_u2" -> lấy sample train_0008)
+        want = Path(a.ids).read_text(encoding="utf-8").split() if Path(a.ids).is_file() else a.ids.split(",")
+        want = {re.sub(r"_u\d+$", "", w.strip()) for w in want if w.strip()}
+        items = [it for it in items if it["id"] in want]
+        print(f"--ids: {len(items)}/{len(want)} sample tìm thấy")
     items = items[:a.limit] if a.limit else items
     t_start = time.time()
 
@@ -725,6 +761,10 @@ def main():
         asr = ZipformerASR(a.zipformer, num_threads=a.zipformer_threads, bias=a.bias, hotwords_score=a.hotword_score,
                            hi=a.hotword_hi, lo=a.hotword_lo, glossary_score=a.glossary_score, beam=a.beam,
                            hotwords_file=a.hotwords_file, lm=a.lm, lm_scale=a.lm_scale, vad=a.vad)
+        a.alt_asr = None
+        if a.alt_zipformer:
+            a.alt_asr = ZipformerASR(a.zipformer if a.alt_zipformer == "same" else a.alt_zipformer,
+                                     num_threads=a.zipformer_threads, bias=False, vad=a.vad, decoding="greedy_search")
         if not Path(a.cand_train).exists():
             sys.exit(f"thiếu {a.cand_train}: giải nén asr_assets.zip (bước E) hoặc chạy asr/eval_asr.py --dump (bước A)")
         cands = Candidates.from_train(a.cand_train)
@@ -756,12 +796,15 @@ def main():
                     raw = [u["audio_text"] for u in turns]
                 else:  # ASR(+LM) -> [prefetch: LLM gọi tool đọc -> tên làm hotword -> decode lại QUERY] -> đánh dấu + LLM sửa
                     paths = [root / a.split / u["audio"] for u in turns]
-                    wls, keeps, fell, names, pre_done = asr_with_prefetch(a, item, asr, paths, None if gold else llm, tools,
+                    wls, keeps, fell, names, pre_done, alts = asr_with_prefetch(a, item, asr, paths, None if gold else llm, tools,
                                                                           catalog, pools, trace, common, env)
+                    rst = Counter()
                     raw, marked = refine(llm if a.refine and not gold else None, wls, cands, a.conf_thr, a.cand_k,
-                                         keep=keeps, names=names)
+                                         keep=keeps, names=names, **refine_kw(a, alts, rst))
                     if a.refine:
                         trace.extend({"refine": {"marked": m, "to": t}} for m, t in zip(marked, raw) if "[" in m)
+                        if rst:
+                            trace.append({"refine_edits": dict(rst)})
                     trace.extend({"bias_fallback": k} for k, f in enumerate(fell) if f)
                 # 2. dialect mapper (không ITN: số giữ dạng chữ, planner tự đổi sang tham số); output rỗng -> giữ câu cũ
                 texts = [m or r for r, m in zip(raw, mapper.chat([mapper_conv(r) for r in raw], None, {"enable_thinking": False}))] if mapper else raw
