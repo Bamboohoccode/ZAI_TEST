@@ -28,17 +28,35 @@ def _heldout(item_id):
         return False
 
 
+def proper_words(texts, min_count=2, min_ratio=0.6):
+    """từ là tên riêng theo nhãn gốc (có chữ hoa): viết hoa >= min_ratio số lần gặp ở GIỮA câu (bỏ từ đầu câu / sau dấu
+    câu) và >= min_count lần. Vd. "nhắn Sếp Dũng" -> "dũng" (nếu nơi khác cũng viết hoa)."""
+    cap, tot = Counter(), Counter()
+    for t in texts:
+        prev = "."
+        for tok in (t or "").split():
+            w = re.sub(r"[^\w]", "", tok)
+            if w and not w.isdigit():
+                lw = w.lower()
+                if prev[-1:] not in ".?!;:\"":
+                    tot[lw] += 1
+                    cap[lw] += w[0].isupper()
+            prev = tok
+    return frozenset(w for w, n in cap.items() if n >= min_count and n >= min_ratio * tot[w])
+
+
 class Candidates:
-    def __init__(self, confusion, vocab):
+    def __init__(self, confusion, vocab, proper=frozenset()):
         self.confusion = confusion          # {từ ASR: Counter(từ đúng)}
         self.vocab = vocab                  # Counter(từ đúng)
+        self.proper = proper                # tên riêng (proper_words): không đánh dấu, LLM không được đổi
         self._phon = {}
         for w in vocab:
             self._phon.setdefault(phon(w), []).append(w)
 
     @classmethod
     def from_train(cls, path, include_heldout=False):
-        confusion, vocab = defaultdict(Counter), Counter()
+        confusion, vocab, texts = defaultdict(Counter), Counter(), []
         for line in open(path, encoding="utf-8"):
             if not line.strip():
                 continue
@@ -47,18 +65,19 @@ class Candidates:
                 continue
             hyp, ref = r.get("hyp", "").lower().split(), r.get("ref_spoken", "").lower().split()
             vocab.update(ref)
+            texts.append(r.get("ref") or "")  # nhãn gốc (có chữ hoa) -> tên riêng
             sm = difflib.SequenceMatcher(None, hyp, ref, autojunk=False)
             for op, i1, i2, j1, j2 in sm.get_opcodes():
                 if op == "replace" and i2 - i1 == j2 - j1:
                     for h, t in zip(hyp[i1:i2], ref[j1:j2]):
                         confusion[h][t] += 1
-        return cls(confusion, vocab)
+        return cls(confusion, vocab, proper_words(texts))
 
     @classmethod
     def from_refs(cls, path, include_heldout=False):
         """dự phòng khi chưa có asr_train_plain.jsonl: từ vựng lấy từ audio_text của <split>.jsonl BTC (mọi lượt user),
         không có bảng nhầm lẫn (ứng viên chỉ từ gần âm). Số giữ nguyên dạng nhãn (to_spoken không chạy ở đây)."""
-        vocab = Counter()
+        vocab, texts = Counter(), []
         for line in open(path, encoding="utf-8"):
             if not line.strip():
                 continue
@@ -67,7 +86,8 @@ class Candidates:
                 continue
             for u in [h for h in it.get("history", []) if h.get("role") == "user"] + [it]:
                 vocab.update(w for w in re.findall(r"[^\W\d_]+", (u.get("audio_text") or "").lower()))
-        return cls(defaultdict(Counter), vocab)
+                texts.append(u.get("audio_text") or "")
+        return cls(defaultdict(Counter), vocab, proper_words(texts))
 
     def candidates(self, word, k=3, min_ratio=0.75, min_count=2, max_dist=0.8, method="syl"):
         """bảng nhầm lẫn (gặp >= min_count lần) trước, rồi từ gần âm: giống âm hơn trước, cùng mức thì từ hay gặp trước.
@@ -101,7 +121,7 @@ class Candidates:
                 opts = [x for x in dict.fromkeys(alt[i] + (self.candidates(w, k) if c < thr else [])) if x and x != w]
                 parts.append("[" + "|".join([w] + opts[:k + 1]) + "]")
                 n += 1
-            elif c < thr and w not in keep:
+            elif c < thr and w not in keep and w not in self.proper:
                 parts.append("[" + "|".join([w] + self.candidates(w, k)) + "]")
                 n += 1
             else:
@@ -217,13 +237,14 @@ def _clean_out(out):
     return out.strip(" .\"'")
 
 
-def accept_refine(raw, out, suspects=None, support=(), max_dist=1.0, min_ratio=0.5, free_dist=0.0, stats=None):
+def accept_refine(raw, out, suspects=None, support=(), max_dist=1.0, min_ratio=0.5, free_dist=0.0, stats=None,
+                  proper=frozenset()):
     """LLM trả về rác / viết lại cả câu -> giữ câu ASR. Chấp nhận khi số từ lệch ít và phần lớn từ còn giữ.
     suspects (tập vị trí từ bị đánh dấu) khác None -> chế độ chặt: xét TỪNG chỗ LLM sửa, chỉ nhận chỗ
       - chạm vị trí bị đánh dấu, hoặc cụm mới có trong `support` (tên --prefetch, cụm của bản decode khác),
         hoặc (free_dist > 0) đổi 1-1 từ không bị đánh dấu nhưng đọc rất gần (dist <= free_dist);
       - đọc gần giống đoạn cũ (_phon_ok), trừ khi có trong support;
-      - không đổi số / phủ định (PROTECT), trừ khi có trong support.
+      - không đổi số / phủ định (PROTECT), không đổi tên riêng (proper) thành từ khác, trừ khi có trong support.
     Chỗ không đạt giữ nguyên chữ ASR, các chỗ khác vẫn nhận. stats: Counter đếm lý do."""
     stats = stats if stats is not None else Counter()
     out = _clean_out(out)
@@ -265,6 +286,8 @@ def accept_refine(raw, out, suspects=None, support=(), max_dist=1.0, min_ratio=0
             why = "ngoài chỗ đánh dấu"
         elif not sup and Counter(w for w in old if w in PROTECT) != Counter(w for w in new if w in PROTECT):
             why = "đổi số/phủ định"
+        elif not sup and any(w in proper for w in old) and not all(w in proper for w in new):
+            why = "đổi tên riêng"
         elif not sup and not _phon_ok(old, new, max_dist, min_ratio):
             why = "khác âm"
         else:
@@ -302,7 +325,8 @@ def refine(llm, word_lists, cands, thr=0.6, k=3, use_context=True, keep=frozense
             if not strict:
                 texts[i] = accept_refine(raws[i], out, stats=stats)
                 continue
-            sus = set(spans[i]) | {j for j, (w, c) in enumerate(word_lists[i]) if c < thr and w not in keeps[i]}
+            sus = set(spans[i]) | {j for j, (w, c) in enumerate(word_lists[i])
+                                   if c < thr and w not in keeps[i] and w not in cands.proper}
             support = {x.lower() for x in names[i] or ()} | {x for v in spans[i].values() for x in v if x}
-            texts[i] = accept_refine(raws[i], out, sus, support, max_dist, min_ratio, free_dist, stats)
+            texts[i] = accept_refine(raws[i], out, sus, support, max_dist, min_ratio, free_dist, stats, cands.proper)
     return texts, [m for m, _ in marked]
